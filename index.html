@@ -81,6 +81,7 @@
       { key: 'labeling', label: 'Labeling', type: 'text', required: false },
       { key: 'birthDate', label: 'Birth Date', type: 'date', required: false },
       { key: 'sacrificeDate', label: 'Sacrifice Date', type: 'date', required: false },
+      { key: 'ageMonths', label: 'Age (months, if no birth date)', type: 'number', required: false },
       { key: 'notes', label: 'Notes', type: 'textarea', required: false },
     ];
 
@@ -130,6 +131,28 @@
       const months = Math.floor(totalDays / 30.44);
       const remainingDays = Math.floor(totalDays % 30.44);
       return { days: totalDays, months, remainingDays };
+    }
+
+    // Get mouse age - uses calculated age if birthDate exists, otherwise uses manual ageMonths
+    function getMouseAge(mouse) {
+      if (!mouse) return { days: null, months: null, remainingDays: null, isManual: false };
+      
+      if (mouse.birthDate) {
+        const age = calculateAge(mouse.birthDate, mouse.sacrificeDate);
+        return { ...age, isManual: false };
+      }
+      
+      // Use manual age if no birth date
+      if (mouse.ageMonths !== null && mouse.ageMonths !== undefined && mouse.ageMonths !== '') {
+        return { 
+          days: null, 
+          months: Number(mouse.ageMonths), 
+          remainingDays: null, 
+          isManual: true 
+        };
+      }
+      
+      return { days: null, months: null, remainingDays: null, isManual: false };
     }
 
     function formatFieldValue(value, type) {
@@ -863,8 +886,11 @@
           let aVal, bVal;
           
           if (sort.key === 'age') {
-            aVal = a.birthDate ? calculateAge(a.birthDate).days : -1;
-            bVal = b.birthDate ? calculateAge(b.birthDate).days : -1;
+            const ageA = getMouseAge(a);
+            const ageB = getMouseAge(b);
+            // Use days if available, otherwise convert months to approximate days
+            aVal = ageA.days ?? (ageA.months !== null ? ageA.months * 30.44 : -1);
+            bVal = ageB.days ?? (ageB.months !== null ? ageB.months * 30.44 : -1);
           } else {
             aVal = a[sort.key] ?? '';
             bVal = b[sort.key] ?? '';
@@ -926,7 +952,7 @@
                     </td></tr>
                   ) : (
                     sortedAndFilteredMice.map(mouse => {
-                      const age = calculateAge(mouse.birthDate, mouse.sacrificeDate);
+                      const age = getMouseAge(mouse);
                       return (
                         <tr key={mouse.id} className="hover:bg-gray-700/30">
                           <td className="px-3 py-2 font-mono text-purple-400 text-xs">{mouse.id}</td>
@@ -978,7 +1004,7 @@
                 <div className="text-sm text-gray-300">
                   <span className="font-medium">{addingSliceForMouse.mouseNumber}</span>
                   {' | '}{abbrevSex(addingSliceForMouse.sex)}
-                  {' | '}{calculateAge(addingSliceForMouse.birthDate, addingSliceForMouse.sacrificeDate).months ?? '?'}m
+                  {' | '}{getMouseAge(addingSliceForMouse).months ?? '?'}m
                   {' | '}{addingSliceForMouse.genotype || 'No genotype'}
                   {' | '}{addingSliceForMouse.labeling || 'No labeling'}
                 </div>
@@ -1122,8 +1148,10 @@
               bVal = mouseB?.sex ?? '';
               break;
             case 'age':
-              aVal = mouseA?.birthDate ? calculateAge(mouseA.birthDate).days : -1;
-              bVal = mouseB?.birthDate ? calculateAge(mouseB.birthDate).days : -1;
+              const ageA = getMouseAge(mouseA);
+              const ageB = getMouseAge(mouseB);
+              aVal = ageA.days ?? (ageA.months !== null ? ageA.months * 30.44 : -1);
+              bVal = ageB.days ?? (ageB.months !== null ? ageB.months * 30.44 : -1);
               break;
             default:
               aVal = a[sort.key] ?? '';
@@ -1138,7 +1166,7 @@
 
       const getSliceInfo = (slice) => {
         const mouse = mice.find(m => m.id === slice.mouseId);
-        const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+        const age = getMouseAge(mouse);
         return {
           mouseNumber: mouse?.mouseNumber || 'N/A',
           sex: abbrevSex(mouse?.sex),
@@ -1334,7 +1362,7 @@
                     <tr><td colSpan={5} className="px-4 py-4 text-center text-gray-500">No mice found</td></tr>
                   ) : (
                     filteredMice.map(mouse => {
-                      const age = calculateAge(mouse.birthDate, mouse.sacrificeDate);
+                      const age = getMouseAge(mouse);
                       return (
                         <tr 
                           key={mouse.id} 
@@ -1362,7 +1390,7 @@
         );
       }
 
-      const age = calculateAge(selectedMouse.birthDate, selectedMouse.sacrificeDate);
+      const age = getMouseAge(selectedMouse);
       return (
         <div>
           <div className="mb-4 p-3 bg-purple-600/20 border border-purple-600/50 rounded-lg">
@@ -1511,17 +1539,17 @@
       const getExpDetails = (exp) => {
         const slice = slices.find(s => s.id === exp.sliceId);
         const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
-        const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+        const age = getMouseAge(mouse);
         return {
           slice,
           mouse,
           mouseNumber: mouse?.mouseNumber || 'N/A',
-          sex: mouse?.sex || 'N/A',
+          sex: abbrevSex(mouse?.sex),
           age: age?.months ?? '?',
           genotype: mouse?.genotype || 'N/A',
           labeling: mouse?.labeling || 'N/A',
           thickness: slice?.thickness || 'N/A',
-          region: Array.isArray(slice?.region) ? slice.region.join('/') : (slice?.region || 'N/A'),
+          region: abbrevRegion(slice?.region),
           cryosectionDate: slice?.cryosectionDate ? new Date(slice.cryosectionDate).toLocaleDateString() : 'N/A'
         };
       };
@@ -1734,7 +1762,7 @@
                     <tr><td colSpan={5} className="px-4 py-4 text-center text-gray-500">No mice found</td></tr>
                   ) : (
                     filteredMice.map(mouse => {
-                      const age = calculateAge(mouse.birthDate, mouse.sacrificeDate);
+                      const age = getMouseAge(mouse);
                       return (
                         <tr 
                           key={mouse.id} 
@@ -1764,7 +1792,7 @@
 
       // Step 2: Select Slice
       if (!selectedSlice) {
-        const age = calculateAge(selectedMouse.birthDate, selectedMouse.sacrificeDate);
+        const age = getMouseAge(selectedMouse);
         return (
           <div>
             <div className="mb-4 p-3 bg-purple-600/20 border border-purple-600/50 rounded-lg">
@@ -1828,7 +1856,7 @@
       }
 
       // Step 3: Fill in experiment details
-      const age = calculateAge(selectedMouse.birthDate, selectedMouse.sacrificeDate);
+      const age = getMouseAge(selectedMouse);
       return (
         <div>
           <div className="mb-4 p-3 bg-blue-600/20 border border-blue-600/50 rounded-lg">
@@ -1917,8 +1945,10 @@
             case 'sex': aVal = mouseA?.sex ?? ''; bVal = mouseB?.sex ?? ''; break;
             case 'genotype': aVal = mouseA?.genotype ?? ''; bVal = mouseB?.genotype ?? ''; break;
             case 'age':
-              aVal = mouseA?.birthDate ? calculateAge(mouseA.birthDate).days : -1;
-              bVal = mouseB?.birthDate ? calculateAge(mouseB.birthDate).days : -1;
+              const ageA = getMouseAge(mouseA);
+              const ageB = getMouseAge(mouseB);
+              aVal = ageA.days ?? (ageA.months !== null ? ageA.months * 30.44 : -1);
+              bVal = ageB.days ?? (ageB.months !== null ? ageB.months * 30.44 : -1);
               break;
             case 'sacrificeDate': aVal = mouseA?.sacrificeDate ?? ''; bVal = mouseB?.sacrificeDate ?? ''; break;
             default: aVal = a[sort.key] ?? ''; bVal = b[sort.key] ?? '';
@@ -1950,7 +1980,7 @@
         const labelData = selectedExps.map(exp => {
           const slice = slices.find(s => s.id === exp.sliceId);
           const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
-          const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+          const age = getMouseAge(mouse);
           // Pre-compute abbreviations
           const sexAbbrev = abbrevSex(mouse?.sex);
           const regionAbbrev = abbrevRegion(slice?.region);
@@ -2124,7 +2154,7 @@
               sortedAndFilteredExperiments.map(exp => {
                 const slice = slices.find(s => s.id === exp.sliceId);
                 const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
-                const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+                const age = getMouseAge(mouse);
                 const isSelected = selectedExperiments.has(exp.id);
                 return (
                   <div
