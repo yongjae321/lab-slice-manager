@@ -977,7 +977,7 @@
                 <div className="text-sm font-medium text-purple-300 mb-1">Adding slice for mouse:</div>
                 <div className="text-sm text-gray-300">
                   <span className="font-medium">{addingSliceForMouse.mouseNumber}</span>
-                  {' | '}{addingSliceForMouse.sex}
+                  {' | '}{abbrevSex(addingSliceForMouse.sex)}
                   {' | '}{calculateAge(addingSliceForMouse.birthDate, addingSliceForMouse.sacrificeDate).months ?? '?'}m
                   {' | '}{addingSliceForMouse.genotype || 'No genotype'}
                   {' | '}{addingSliceForMouse.labeling || 'No labeling'}
@@ -1141,12 +1141,12 @@
         const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
         return {
           mouseNumber: mouse?.mouseNumber || 'N/A',
-          sex: mouse?.sex || 'N/A',
+          sex: abbrevSex(mouse?.sex),
           age: age?.months ?? '?',
           genotype: mouse?.genotype || 'N/A',
           labeling: mouse?.labeling || 'N/A',
           thickness: slice.thickness || 'N/A',
-          region: Array.isArray(slice.region) ? slice.region.join('/') : (slice.region || 'N/A'),
+          region: abbrevRegion(slice.region),
           cryosectionDate: slice.cryosectionDate ? new Date(slice.cryosectionDate).toLocaleDateString() : 'N/A'
         };
       };
@@ -1370,7 +1370,7 @@
               <div>
                 <div className="text-sm font-medium text-purple-300 mb-1">Selected mouse:</div>
                 <div className="text-sm text-gray-300">
-                  {selectedMouse.mouseNumber} | {selectedMouse.sex} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'}
+                  {selectedMouse.mouseNumber} | {abbrevSex(selectedMouse.sex)} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'}
                 </div>
               </div>
               <button onClick={() => setSelectedMouse(null)} className="text-xs text-purple-400 hover:text-purple-300">
@@ -1772,7 +1772,7 @@
                 <div>
                   <div className="text-sm font-medium text-purple-300 mb-1">Selected mouse:</div>
                   <div className="text-sm text-gray-300">
-                    {selectedMouse.mouseNumber} | {selectedMouse.sex} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'}
+                    {selectedMouse.mouseNumber} | {abbrevSex(selectedMouse.sex)} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'}
                   </div>
                 </div>
                 <button onClick={() => setSelectedMouse(null)} className="text-xs text-purple-400 hover:text-purple-300">
@@ -1808,7 +1808,7 @@
                         className="hover:bg-blue-600/30 cursor-pointer"
                       >
                         <td className="px-3 py-2 text-blue-400 font-mono text-xs">{slice.id}</td>
-                        <td className="px-3 py-2 text-gray-300">{Array.isArray(slice.region) ? slice.region.join('/') : slice.region || 'N/A'}</td>
+                        <td className="px-3 py-2 text-gray-300">{abbrevRegion(slice.region)}</td>
                         <td className="px-3 py-2 text-gray-300">{slice.thickness || 'N/A'}μm</td>
                         <td className="px-3 py-2 text-gray-300">{slice.cryosectionDate ? new Date(slice.cryosectionDate).toLocaleDateString() : 'N/A'}</td>
                       </tr>
@@ -1839,7 +1839,7 @@
               </button>
             </div>
             <div className="text-sm text-gray-300">
-              {selectedMouse.mouseNumber} | {selectedMouse.sex} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'} | {selectedSlice.thickness}μm | {Array.isArray(selectedSlice.region) ? selectedSlice.region.join('/') : selectedSlice.region} | {selectedSlice.cryosectionDate ? new Date(selectedSlice.cryosectionDate).toLocaleDateString() : 'N/A'}
+              {selectedMouse.mouseNumber} | {abbrevSex(selectedMouse.sex)} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'} | {selectedSlice.thickness}μm | {abbrevRegion(selectedSlice.region)} | {selectedSlice.cryosectionDate ? new Date(selectedSlice.cryosectionDate).toLocaleDateString() : 'N/A'}
             </div>
           </div>
           <DynamicForm schema={experimentSchema} onSubmit={handleSubmit} onCancel={onCancel} submitLabel="Add Experiment" />
