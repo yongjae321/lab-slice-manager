@@ -307,7 +307,7 @@
         try {
           const { error } = await supabase.auth.signInWithOtp({
             email,
-            options: { emailRedirectTo: window.location.origin }
+            options: { emailRedirectTo: window.location.href.split('#')[0].split('?')[0] }
           });
           if (error) throw error;
           setMessage('Check your email for the magic link or enter the OTP code!');
