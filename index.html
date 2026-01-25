@@ -27,13 +27,33 @@
     const { useState, useEffect, useRef, useMemo, createContext, useContext } = React;
 
     // ============================================
-    // CONFIGURATION - Edit these for your Supabase
+    // CONFIGURATION - Now stored in localStorage!
+    // You can still hardcode here, or enter via Settings
     // ============================================
-    const SUPABASE_URL = 'https://dcvaenscfybcfalgmrgx.supabase.co'; // e.g., 'https://xxxx.supabase.co'
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdmFlbnNjZnliY2ZhbGdtcmd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyODk4NjUsImV4cCI6MjA4NDg2NTg2NX0.FVAm8I_ycP531RHalj3wAXjPm-A15AtNDSqRk1Mfu9E'; // Your anon/public key
+    const HARDCODED_SUPABASE_URL = ''; // Optional: e.g., 'https://xxxx.supabase.co'
+    const HARDCODED_SUPABASE_ANON_KEY = ''; // Optional: Your anon/public key
     
-    const supabase = SUPABASE_URL && SUPABASE_ANON_KEY 
-      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    // Get config from localStorage or use hardcoded values
+    const getSupabaseConfig = () => {
+      const stored = localStorage.getItem('supabase_config');
+      if (stored) {
+        try {
+          return JSON.parse(stored);
+        } catch (e) {}
+      }
+      return { 
+        url: HARDCODED_SUPABASE_URL, 
+        key: HARDCODED_SUPABASE_ANON_KEY 
+      };
+    };
+    
+    const saveSupabaseConfig = (url, key) => {
+      localStorage.setItem('supabase_config', JSON.stringify({ url, key }));
+    };
+    
+    const config = getSupabaseConfig();
+    const supabase = config.url && config.key 
+      ? window.supabase.createClient(config.url, config.key)
       : null;
 
     // ============================================
@@ -56,6 +76,7 @@
     // ============================================
     const DEFAULT_MOUSE_SCHEMA = [
       { key: 'mouseNumber', label: 'Mouse Number', type: 'text', required: true },
+      { key: 'labeling', label: 'Labeling', type: 'text', required: false },
       { key: 'sex', label: 'Sex', type: 'select', options: ['Male', 'Female'], required: true },
       { key: 'genotype', label: 'Genotype', type: 'text', required: false },
       { key: 'birthDate', label: 'Birth Date', type: 'date', required: false },
@@ -121,6 +142,25 @@
       return String(value);
     }
 
+    function renderCellValue(value, field) {
+      if (value === null || value === undefined || value === '') return 'N/A';
+      if (field.type === 'date') {
+        return new Date(value).toLocaleDateString();
+      }
+      if (field.type === 'multicheck' && Array.isArray(value)) {
+        return value.join(', ') || 'N/A';
+      }
+      if (field.type === 'multitext' && Array.isArray(value)) {
+        return value.length > 0 ? `${value.length} file(s)` : 'N/A';
+      }
+      if (field.type === 'textarea') {
+        // Truncate long text for table display
+        const str = String(value);
+        return str.length > 50 ? str.substring(0, 50) + '...' : str;
+      }
+      return String(value);
+    }
+
     function getNestedValue(obj, path) {
       return path.split('.').reduce((acc, part) => acc && acc[part], obj);
     }
@@ -181,10 +221,17 @@
               supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
             ]);
 
-            if (miceRes.data) setMice(miceRes.data);
-            if (slicesRes.data) setSlices(slicesRes.data);
-            if (expRes.data) setExperiments(expRes.data);
-            if (schemaRes.data) {
+            // Log any errors for debugging
+            if (miceRes.error) console.error('Error loading mice:', miceRes.error);
+            if (slicesRes.error) console.error('Error loading slices:', slicesRes.error);
+            if (expRes.error) console.error('Error loading experiments:', expRes.error);
+            if (schemaRes.error && schemaRes.error.code !== 'PGRST116') console.error('Error loading settings:', schemaRes.error);
+
+            // Only update state if we got data (don't overwrite with empty on error)
+            if (miceRes.data && !miceRes.error) setMice(miceRes.data);
+            if (slicesRes.data && !slicesRes.error) setSlices(slicesRes.data);
+            if (expRes.data && !expRes.error) setExperiments(expRes.data);
+            if (schemaRes.data && !schemaRes.error) {
               if (schemaRes.data.mouse_schema) setMouseSchema(schemaRes.data.mouse_schema);
               if (schemaRes.data.slice_schema) setSliceSchema(schemaRes.data.slice_schema);
               if (schemaRes.data.experiment_schema) setExperimentSchema(schemaRes.data.experiment_schema);
@@ -192,25 +239,31 @@
             }
           } catch (err) {
             console.error('Error loading from Supabase:', err);
+            // Fall back to localStorage on error
+            loadFromLocalStorage();
           }
         } else {
-          const savedMice = localStorage.getItem('labManager_mice');
-          const savedSlices = localStorage.getItem('labManager_slices');
-          const savedExperiments = localStorage.getItem('labManager_experiments');
-          const savedMouseSchema = localStorage.getItem('labManager_mouseSchema');
-          const savedSliceSchema = localStorage.getItem('labManager_sliceSchema');
-          const savedExperimentSchema = localStorage.getItem('labManager_experimentSchema');
-          const savedLabelConfig = localStorage.getItem('labManager_labelConfig');
-
-          if (savedMice) setMice(JSON.parse(savedMice));
-          if (savedSlices) setSlices(JSON.parse(savedSlices));
-          if (savedExperiments) setExperiments(JSON.parse(savedExperiments));
-          if (savedMouseSchema) setMouseSchema(JSON.parse(savedMouseSchema));
-          if (savedSliceSchema) setSliceSchema(JSON.parse(savedSliceSchema));
-          if (savedExperimentSchema) setExperimentSchema(JSON.parse(savedExperimentSchema));
-          if (savedLabelConfig) setLabelConfig(JSON.parse(savedLabelConfig));
+          loadFromLocalStorage();
         }
         setDataLoaded(true);
+      };
+      
+      const loadFromLocalStorage = () => {
+        const savedMice = localStorage.getItem('labManager_mice');
+        const savedSlices = localStorage.getItem('labManager_slices');
+        const savedExperiments = localStorage.getItem('labManager_experiments');
+        const savedMouseSchema = localStorage.getItem('labManager_mouseSchema');
+        const savedSliceSchema = localStorage.getItem('labManager_sliceSchema');
+        const savedExperimentSchema = localStorage.getItem('labManager_experimentSchema');
+        const savedLabelConfig = localStorage.getItem('labManager_labelConfig');
+
+        if (savedMice) setMice(JSON.parse(savedMice));
+        if (savedSlices) setSlices(JSON.parse(savedSlices));
+        if (savedExperiments) setExperiments(JSON.parse(savedExperiments));
+        if (savedMouseSchema) setMouseSchema(JSON.parse(savedMouseSchema));
+        if (savedSliceSchema) setSliceSchema(JSON.parse(savedSliceSchema));
+        if (savedExperimentSchema) setExperimentSchema(JSON.parse(savedExperimentSchema));
+        if (savedLabelConfig) setLabelConfig(JSON.parse(savedLabelConfig));
       };
 
       useEffect(() => {
@@ -292,6 +345,15 @@
       const [message, setMessage] = useState('');
       const [showOtpInput, setShowOtpInput] = useState(false);
       const [otp, setOtp] = useState('');
+      const [showConfig, setShowConfig] = useState(false);
+      const [configUrl, setConfigUrl] = useState(getSupabaseConfig().url || '');
+      const [configKey, setConfigKey] = useState(getSupabaseConfig().key || '');
+
+      const handleSaveConfig = () => {
+        saveSupabaseConfig(configUrl.trim(), configKey.trim());
+        setMessage('Configuration saved! Reloading...');
+        setTimeout(() => window.location.reload(), 1000);
+      };
 
       const handleMagicLink = async (e) => {
         e.preventDefault();
@@ -411,9 +473,98 @@
 
             {!supabase && (
               <div className="mt-4 p-4 bg-yellow-600/20 border border-yellow-600/50 rounded-lg">
-                <p className="text-sm text-yellow-400">
-                  <strong>Note:</strong> Supabase not configured. Online sync disabled.
-                </p>
+                {!showConfig ? (
+                  <>
+                    <p className="text-sm text-yellow-400 mb-3">
+                      <strong>Note:</strong> Supabase not configured. Online sync disabled.
+                    </p>
+                    <button
+                      onClick={() => setShowConfig(true)}
+                      className="w-full py-2 bg-yellow-600/30 hover:bg-yellow-600/50 rounded-lg text-sm text-yellow-300 flex items-center justify-center gap-2"
+                    >
+                      <Icon name="Settings" className="w-4 h-4" /> Configure Supabase
+                    </button>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <h3 className="font-medium text-yellow-300">Supabase Configuration</h3>
+                    <div>
+                      <label className="block text-xs text-yellow-400/70 mb-1">Project URL</label>
+                      <input
+                        type="text"
+                        value={configUrl}
+                        onChange={(e) => setConfigUrl(e.target.value)}
+                        placeholder="https://xxxxx.supabase.co"
+                        className="w-full px-3 py-2 bg-gray-800 border border-yellow-600/50 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-yellow-400/70 mb-1">Anon Public Key</label>
+                      <input
+                        type="text"
+                        value={configKey}
+                        onChange={(e) => setConfigKey(e.target.value)}
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                        className="w-full px-3 py-2 bg-gray-800 border border-yellow-600/50 rounded text-sm"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setShowConfig(false)} className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveConfig}
+                        disabled={!configUrl.trim() || !configKey.trim()}
+                        className="flex-1 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm font-medium"
+                      >
+                        Save & Reload
+                      </button>
+                    </div>
+                    <p className="text-xs text-yellow-400/50">
+                      Credentials are stored in your browser. You won't need to enter them again.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {supabase && (
+              <button
+                onClick={() => setShowConfig(!showConfig)}
+                className="mt-4 w-full py-2 text-gray-500 hover:text-gray-300 text-xs flex items-center justify-center gap-1"
+              >
+                <Icon name="Settings" className="w-3 h-3" /> {showConfig ? 'Hide' : 'Change'} Supabase Config
+              </button>
+            )}
+            
+            {supabase && showConfig && (
+              <div className="mt-2 p-4 bg-gray-800 border border-gray-700 rounded-lg">
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Project URL</label>
+                    <input
+                      type="text"
+                      value={configUrl}
+                      onChange={(e) => setConfigUrl(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Anon Public Key</label>
+                    <input
+                      type="text"
+                      value={configKey}
+                      onChange={(e) => setConfigKey(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSaveConfig}
+                    className="w-full py-2 bg-purple-600 hover:bg-purple-700 rounded text-sm font-medium"
+                  >
+                    Save & Reload
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -555,8 +706,19 @@
       const addMouse = async (data) => {
         const newMouse = { id: generateId(), created_at: new Date().toISOString(), ...data };
         if (supabase && user && !user.offline) {
-          const { data: inserted, error } = await supabase.from('mice').insert({ ...newMouse, user_id: user.id }).select().single();
-          if (!error && inserted) setMice([inserted, ...mice]);
+          try {
+            const { data: inserted, error } = await supabase.from('mice').insert({ ...newMouse, user_id: user.id }).select().single();
+            if (error) {
+              console.error('Supabase error adding mouse:', error);
+              alert('Error saving to cloud: ' + error.message + '\n\nData saved locally.');
+              setMice([newMouse, ...mice]);
+            } else if (inserted) {
+              setMice([inserted, ...mice]);
+            }
+          } catch (err) {
+            console.error('Error adding mouse:', err);
+            setMice([newMouse, ...mice]);
+          }
         } else {
           setMice([newMouse, ...mice]);
         }
@@ -656,18 +818,23 @@
                 <thead className="bg-gray-700/50">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium text-gray-300">ID</th>
-                    <SortableHeader label="Mouse #" sortKey="mouseNumber" currentSort={sort} onSort={handleSort} />
-                    <SortableHeader label="Sex" sortKey="sex" currentSort={sort} onSort={handleSort} />
-                    <SortableHeader label="Genotype" sortKey="genotype" currentSort={sort} onSort={handleSort} />
+                    {mouseSchema.map(field => (
+                      <SortableHeader 
+                        key={field.key} 
+                        label={field.label} 
+                        sortKey={field.key} 
+                        currentSort={sort} 
+                        onSort={handleSort} 
+                      />
+                    ))}
                     <SortableHeader label="Age" sortKey="age" currentSort={sort} onSort={handleSort} />
-                    <SortableHeader label="Sacrifice Date" sortKey="sacrificeDate" currentSort={sort} onSort={handleSort} />
                     <th className="px-3 py-2 text-left font-medium text-gray-300">Slices</th>
                     <th className="px-3 py-2 text-right font-medium text-gray-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-700">
                   {sortedAndFilteredMice.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    <tr><td colSpan={mouseSchema.length + 4} className="px-4 py-8 text-center text-gray-500">
                       {mice.length === 0 ? 'No mice yet. Add your first mouse!' : 'No mice match your search.'}
                     </td></tr>
                   ) : (
@@ -677,15 +844,16 @@
                       return (
                         <tr key={mouse.id} className="hover:bg-gray-700/30">
                           <td className="px-3 py-2 font-mono text-purple-400 text-xs">{mouse.id}</td>
-                          <td className="px-3 py-2 text-gray-300 font-medium">{mouse.mouseNumber || 'N/A'}</td>
-                          <td className="px-3 py-2 text-gray-300">{mouse.sex || 'N/A'}</td>
-                          <td className="px-3 py-2 text-gray-300">{mouse.genotype || 'N/A'}</td>
+                          {mouseSchema.map(field => (
+                            <td key={field.key} className="px-3 py-2 text-gray-300">
+                              {renderCellValue(mouse[field.key], field)}
+                            </td>
+                          ))}
                           <td className="px-3 py-2 text-gray-300">
                             {age.days !== null ? (
                               <span title={`${age.days} days`}>{age.months}m {age.remainingDays}d ({age.days}d)</span>
                             ) : 'N/A'}
                           </td>
-                          <td className="px-3 py-2 text-gray-300">{mouse.sacrificeDate ? new Date(mouse.sacrificeDate).toLocaleDateString() : 'N/A'}</td>
                           <td className="px-3 py-2">
                             <span className="bg-blue-600/30 text-blue-400 px-2 py-0.5 rounded-full text-xs">{sliceCount}</span>
                           </td>
@@ -750,8 +918,19 @@
       const addSlice = async (data) => {
         const newSlice = { id: generateId(), created_at: new Date().toISOString(), ...data };
         if (supabase && user && !user.offline) {
-          const { data: inserted, error } = await supabase.from('slices').insert({ ...newSlice, user_id: user.id }).select().single();
-          if (!error && inserted) setSlices([inserted, ...slices]);
+          try {
+            const { data: inserted, error } = await supabase.from('slices').insert({ ...newSlice, user_id: user.id }).select().single();
+            if (error) {
+              console.error('Supabase error adding slice:', error);
+              alert('Error saving to cloud: ' + error.message + '\n\nData saved locally.');
+              setSlices([newSlice, ...slices]);
+            } else if (inserted) {
+              setSlices([inserted, ...slices]);
+            }
+          } catch (err) {
+            console.error('Error adding slice:', err);
+            setSlices([newSlice, ...slices]);
+          }
         } else {
           setSlices([newSlice, ...slices]);
         }
@@ -938,10 +1117,12 @@
                           )}
                         </div>
                         <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-sm">
-                          <div><span className="text-gray-500">Region: </span><span className="text-gray-300">{Array.isArray(slice.region) ? slice.region.join(', ') : slice.region || 'N/A'}</span></div>
-                          <div><span className="text-gray-500">Thickness: </span><span className="text-gray-300">{slice.thickness || 'N/A'}μm</span></div>
-                          <div><span className="text-gray-500">Cryosection: </span><span className="text-gray-300">{slice.cryosectionDate ? new Date(slice.cryosectionDate).toLocaleDateString() : 'N/A'}</span></div>
-                          <div><span className="text-gray-500">Embedding: </span><span className="text-gray-300">{slice.embeddingMatrix || 'N/A'}</span></div>
+                          {sliceSchema.map(field => (
+                            <div key={field.key}>
+                              <span className="text-gray-500">{field.label}: </span>
+                              <span className="text-gray-300">{renderCellValue(slice[field.key], field)}</span>
+                            </div>
+                          ))}
                         </div>
                         {mouse && (
                           <div className="mt-2 text-xs text-gray-500">
@@ -1007,8 +1188,19 @@
       const addExperiment = async (data) => {
         const newExp = { id: generateId(), created_at: new Date().toISOString(), ...data };
         if (supabase && user && !user.offline) {
-          const { data: inserted, error } = await supabase.from('experiments').insert({ ...newExp, user_id: user.id }).select().single();
-          if (!error && inserted) setExperiments([inserted, ...experiments]);
+          try {
+            const { data: inserted, error } = await supabase.from('experiments').insert({ ...newExp, user_id: user.id }).select().single();
+            if (error) {
+              console.error('Supabase error adding experiment:', error);
+              alert('Error saving to cloud: ' + error.message + '\n\nData saved locally.');
+              setExperiments([newExp, ...experiments]);
+            } else if (inserted) {
+              setExperiments([inserted, ...experiments]);
+            }
+          } catch (err) {
+            console.error('Error adding experiment:', err);
+            setExperiments([newExp, ...experiments]);
+          }
         } else {
           setExperiments([newExp, ...experiments]);
         }
@@ -1181,6 +1373,11 @@
                 const slice = slices.find(s => s.id === exp.sliceId);
                 const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
                 const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+                
+                // Separate fields into inline (short) and block (long) fields
+                const inlineFields = experimentSchema.filter(f => f.type !== 'textarea' && f.type !== 'multitext');
+                const blockFields = experimentSchema.filter(f => f.type === 'textarea' || f.type === 'multitext');
+                
                 return (
                   <div key={exp.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4">
                     <div className="flex items-start justify-between gap-4">
@@ -1199,26 +1396,38 @@
                           )}
                         </div>
                         <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-sm">
-                          <div><span className="text-gray-500">Exp Date: </span><span className="text-gray-300">{exp.experimentDate ? new Date(exp.experimentDate).toLocaleDateString() : 'N/A'}</span></div>
-                          <div><span className="text-gray-500">Operator: </span><span className="text-gray-300">{exp.operator || 'N/A'}</span></div>
+                          {inlineFields.map(field => (
+                            <div key={field.key}>
+                              <span className="text-gray-500">{field.label}: </span>
+                              <span className="text-gray-300">{renderCellValue(exp[field.key], field)}</span>
+                            </div>
+                          ))}
                           <div><span className="text-gray-500">Added: </span><span className="text-gray-300">{new Date(exp.created_at).toLocaleDateString()}</span></div>
                         </div>
-                        {exp.dataFiles && exp.dataFiles.length > 0 && (
-                          <div className="mt-2 text-sm">
-                            <span className="text-gray-500">Data Files ({exp.dataFiles.length}): </span>
-                            <div className="text-gray-300 text-xs bg-gray-700/50 p-2 rounded mt-1 space-y-0.5">
-                              {exp.dataFiles.map((file, i) => (
-                                <div key={i} className="font-mono truncate" title={file}>{file}</div>
-                              ))}
+                        {blockFields.map(field => {
+                          const value = exp[field.key];
+                          if (!value || (Array.isArray(value) && value.length === 0)) return null;
+                          
+                          if (field.type === 'multitext' && Array.isArray(value)) {
+                            return (
+                              <div key={field.key} className="mt-2 text-sm">
+                                <span className="text-gray-500">{field.label} ({value.length}): </span>
+                                <div className="text-gray-300 text-xs bg-gray-700/50 p-2 rounded mt-1 space-y-0.5">
+                                  {value.map((item, i) => (
+                                    <div key={i} className="font-mono truncate" title={item}>{item}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+                          
+                          return (
+                            <div key={field.key} className="mt-2 text-sm">
+                              <span className="text-gray-500">{field.label}: </span>
+                              <pre className="text-gray-300 whitespace-pre-wrap text-xs bg-gray-700/50 p-2 rounded mt-1">{value}</pre>
                             </div>
-                          </div>
-                        )}
-                        {exp.protocol && (
-                          <div className="mt-2 text-sm">
-                            <span className="text-gray-500">Protocol: </span>
-                            <pre className="text-gray-300 whitespace-pre-wrap text-xs bg-gray-700/50 p-2 rounded mt-1">{exp.protocol}</pre>
-                          </div>
-                        )}
+                          );
+                        })}
                         {mouse && (
                           <div className="mt-2 text-xs text-gray-500">
                             Mouse: {mouse.genotype || 'No genotype'} | Age: {age?.months ?? '?'}m {age?.remainingDays !== null ? `${age.remainingDays}d` : ''} | Sacrifice: {mouse.sacrificeDate ? new Date(mouse.sacrificeDate).toLocaleDateString() : 'N/A'}
