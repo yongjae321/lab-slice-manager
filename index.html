@@ -76,16 +76,16 @@
     // ============================================
     const DEFAULT_MOUSE_SCHEMA = [
       { key: 'mouseNumber', label: 'Mouse Number', type: 'text', required: true },
-      { key: 'labeling', label: 'Labeling', type: 'text', required: false },
-      { key: 'sex', label: 'Sex', type: 'select', options: ['Male', 'Female'], required: true },
+      { key: 'sex', label: 'Sex', type: 'select', options: ['M', 'F'], required: true },
       { key: 'genotype', label: 'Genotype', type: 'text', required: false },
+      { key: 'labeling', label: 'Labeling', type: 'text', required: false },
       { key: 'birthDate', label: 'Birth Date', type: 'date', required: false },
       { key: 'sacrificeDate', label: 'Sacrifice Date', type: 'date', required: false },
       { key: 'notes', label: 'Notes', type: 'textarea', required: false },
     ];
 
     const DEFAULT_SLICE_SCHEMA = [
-      { key: 'region', label: 'Brain Region', type: 'multicheck', options: ['Hippocampus', 'Cortex'], required: true },
+      { key: 'region', label: 'Brain Region', type: 'multicheck', options: ['H', 'C'], required: true },
       { key: 'thickness', label: 'Thickness (μm)', type: 'number', required: true, default: 16 },
       { key: 'cryosectionDate', label: 'Cryosection Date', type: 'date', required: false },
       { key: 'embeddingMatrix', label: 'Embedding Matrix', type: 'select', options: ['TFM', 'OCT'], required: false, default: 'TFM' },
@@ -96,6 +96,7 @@
     ];
 
     const DEFAULT_EXPERIMENT_SCHEMA = [
+      { key: 'title', label: 'Title', type: 'text', required: false },
       { key: 'experimentDate', label: 'Experiment Date', type: 'date', required: true },
       { key: 'dataFiles', label: 'Data File Paths', type: 'multitext', required: false },
       { key: 'protocol', label: 'Protocol', type: 'textarea', required: false },
@@ -698,9 +699,10 @@
     // MICE TAB
     // ============================================
     function MiceTab() {
-      const { mice, setMice, slices, mouseSchema, supabase, user } = useData();
+      const { mice, setMice, slices, setSlices, mouseSchema, sliceSchema, supabase, user } = useData();
       const [showAdd, setShowAdd] = useState(false);
       const [editingMouse, setEditingMouse] = useState(null);
+      const [addingSliceForMouse, setAddingSliceForMouse] = useState(null);
       const [searchTerm, setSearchTerm] = useState('');
       const [searchField, setSearchField] = useState('all');
       const [sort, setSort] = useState({ key: 'created_at', direction: 'desc' });
@@ -709,13 +711,17 @@
       const searchFieldOptions = [
         { key: 'all', label: 'All Fields' },
         { key: 'id', label: 'ID' },
-        ...mouseSchema.map(f => ({ key: f.key, label: f.label }))
+        { key: 'mouseNumber', label: 'Mouse #' },
+        { key: 'sex', label: 'Sex' },
+        { key: 'genotype', label: 'Genotype' },
+        { key: 'labeling', label: 'Labeling' },
       ];
 
-      const generateId = () => `M-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
+      const generateMouseId = () => `M-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
+      const generateSliceId = () => `S-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
 
       const addMouse = async (data) => {
-        const newMouse = { id: generateId(), created_at: new Date().toISOString(), ...data };
+        const newMouse = { id: generateMouseId(), created_at: new Date().toISOString(), ...data };
         if (supabase && user && !user.offline) {
           try {
             const { data: inserted, error } = await supabase.from('mice').insert({ ...newMouse, user_id: user.id }).select().single();
@@ -734,6 +740,28 @@
           setMice([newMouse, ...mice]);
         }
         setShowAdd(false);
+      };
+
+      const addSliceForMouse = async (data) => {
+        const newSlice = { id: generateSliceId(), created_at: new Date().toISOString(), mouseId: addingSliceForMouse.id, ...data };
+        if (supabase && user && !user.offline) {
+          try {
+            const { data: inserted, error } = await supabase.from('slices').insert({ ...newSlice, user_id: user.id }).select().single();
+            if (error) {
+              console.error('Supabase error adding slice:', error);
+              alert('Error saving to cloud: ' + error.message + '\n\nData saved locally.');
+              setSlices([newSlice, ...slices]);
+            } else if (inserted) {
+              setSlices([inserted, ...slices]);
+            }
+          } catch (err) {
+            console.error('Error adding slice:', err);
+            setSlices([newSlice, ...slices]);
+          }
+        } else {
+          setSlices([newSlice, ...slices]);
+        }
+        setAddingSliceForMouse(null);
       };
 
       const updateMouse = async (id, data) => {
@@ -829,47 +857,37 @@
                 <thead className="bg-gray-700/50">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium text-gray-300">ID</th>
-                    {mouseSchema.map(field => (
-                      <SortableHeader 
-                        key={field.key} 
-                        label={field.label} 
-                        sortKey={field.key} 
-                        currentSort={sort} 
-                        onSort={handleSort} 
-                      />
-                    ))}
+                    <SortableHeader label="Mouse #" sortKey="mouseNumber" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Sex" sortKey="sex" currentSort={sort} onSort={handleSort} />
                     <SortableHeader label="Age" sortKey="age" currentSort={sort} onSort={handleSort} />
-                    <th className="px-3 py-2 text-left font-medium text-gray-300">Slices</th>
+                    <SortableHeader label="Genotype" sortKey="genotype" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Labeling" sortKey="labeling" currentSort={sort} onSort={handleSort} />
                     <th className="px-3 py-2 text-right font-medium text-gray-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-700">
                   {sortedAndFilteredMice.length === 0 ? (
-                    <tr><td colSpan={mouseSchema.length + 4} className="px-4 py-8 text-center text-gray-500">
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                       {mice.length === 0 ? 'No mice yet. Add your first mouse!' : 'No mice match your search.'}
                     </td></tr>
                   ) : (
                     sortedAndFilteredMice.map(mouse => {
-                      const sliceCount = slices.filter(s => s.mouseId === mouse.id).length;
                       const age = calculateAge(mouse.birthDate, mouse.sacrificeDate);
                       return (
                         <tr key={mouse.id} className="hover:bg-gray-700/30">
                           <td className="px-3 py-2 font-mono text-purple-400 text-xs">{mouse.id}</td>
-                          {mouseSchema.map(field => (
-                            <td key={field.key} className="px-3 py-2 text-gray-300">
-                              {renderCellValue(mouse[field.key], field)}
-                            </td>
-                          ))}
+                          <td className="px-3 py-2 text-gray-300 font-medium">{mouse.mouseNumber || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.sex || 'N/A'}</td>
                           <td className="px-3 py-2 text-gray-300">
-                            {age.days !== null ? (
-                              <span title={`${age.days} days`}>{age.months}m {age.remainingDays}d ({age.days}d)</span>
-                            ) : 'N/A'}
+                            {age.days !== null ? `${age.months}m` : 'N/A'}
                           </td>
-                          <td className="px-3 py-2">
-                            <span className="bg-blue-600/30 text-blue-400 px-2 py-0.5 rounded-full text-xs">{sliceCount}</span>
-                          </td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.genotype || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.labeling || 'N/A'}</td>
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => setAddingSliceForMouse(mouse)} className="p-1.5 hover:bg-gray-600 rounded text-green-400" title="Add Slice">
+                                <Icon name="Plus" className="w-4 h-4" />
+                              </button>
                               <button onClick={() => setEditingMouse(mouse)} className="p-1.5 hover:bg-gray-600 rounded text-blue-400" title="Edit">
                                 <Icon name="Pencil" className="w-4 h-4" />
                               </button>
@@ -898,6 +916,22 @@
               <DynamicForm schema={mouseSchema} initialData={editingMouse} onSubmit={(data) => updateMouse(editingMouse.id, data)} onCancel={() => setEditingMouse(null)} submitLabel="Save Changes" />
             </Modal>
           )}
+
+          {addingSliceForMouse && (
+            <Modal title="Add Slice" onClose={() => setAddingSliceForMouse(null)}>
+              <div className="mb-4 p-3 bg-purple-600/20 border border-purple-600/50 rounded-lg">
+                <div className="text-sm font-medium text-purple-300 mb-1">Adding slice for mouse:</div>
+                <div className="text-sm text-gray-300">
+                  <span className="font-medium">{addingSliceForMouse.mouseNumber}</span>
+                  {' | '}{addingSliceForMouse.sex}
+                  {' | '}{calculateAge(addingSliceForMouse.birthDate, addingSliceForMouse.sacrificeDate).months ?? '?'}m
+                  {' | '}{addingSliceForMouse.genotype || 'No genotype'}
+                  {' | '}{addingSliceForMouse.labeling || 'No labeling'}
+                </div>
+              </div>
+              <DynamicForm schema={sliceSchema} onSubmit={addSliceForMouse} onCancel={() => setAddingSliceForMouse(null)} submitLabel="Add Slice" />
+            </Modal>
+          )}
         </div>
       );
     }
@@ -906,28 +940,28 @@
     // SLICES TAB
     // ============================================
     function SlicesTab() {
-      const { mice, slices, setSlices, experiments, sliceSchema, mouseSchema, supabase, user } = useData();
+      const { mice, slices, setSlices, experiments, setExperiments, sliceSchema, experimentSchema, supabase, user } = useData();
       const [showAdd, setShowAdd] = useState(false);
       const [editingSlice, setEditingSlice] = useState(null);
+      const [addingExpForSlice, setAddingExpForSlice] = useState(null);
       const [searchTerm, setSearchTerm] = useState('');
       const [searchField, setSearchField] = useState('all');
       const [filterMouseId, setFilterMouseId] = useState('');
       const [sort, setSort] = useState({ key: 'created_at', direction: 'desc' });
 
-      // Build search field options from schema (including mouse fields)
       const searchFieldOptions = [
         { key: 'all', label: 'All Fields' },
         { key: 'id', label: 'Slice ID' },
         { key: 'mouse.mouseNumber', label: 'Mouse Number' },
-        { key: 'mouse.sex', label: 'Mouse Sex' },
-        { key: 'mouse.genotype', label: 'Mouse Genotype' },
-        ...sliceSchema.map(f => ({ key: f.key, label: f.label }))
+        { key: 'mouse.genotype', label: 'Genotype' },
+        { key: 'region', label: 'Region' },
       ];
 
-      const generateId = () => `S-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
+      const generateSliceId = () => `S-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
+      const generateExpId = () => `E-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
 
       const addSlice = async (data) => {
-        const newSlice = { id: generateId(), created_at: new Date().toISOString(), ...data };
+        const newSlice = { id: generateSliceId(), created_at: new Date().toISOString(), ...data };
         if (supabase && user && !user.offline) {
           try {
             const { data: inserted, error } = await supabase.from('slices').insert({ ...newSlice, user_id: user.id }).select().single();
@@ -946,6 +980,28 @@
           setSlices([newSlice, ...slices]);
         }
         setShowAdd(false);
+      };
+
+      const addExpForSlice = async (data) => {
+        const newExp = { id: generateExpId(), created_at: new Date().toISOString(), sliceId: addingExpForSlice.id, ...data };
+        if (supabase && user && !user.offline) {
+          try {
+            const { data: inserted, error } = await supabase.from('experiments').insert({ ...newExp, user_id: user.id }).select().single();
+            if (error) {
+              console.error('Supabase error adding experiment:', error);
+              alert('Error saving to cloud: ' + error.message + '\n\nData saved locally.');
+              setExperiments([newExp, ...experiments]);
+            } else if (inserted) {
+              setExperiments([inserted, ...experiments]);
+            }
+          } catch (err) {
+            console.error('Error adding experiment:', err);
+            setExperiments([newExp, ...experiments]);
+          }
+        } else {
+          setExperiments([newExp, ...experiments]);
+        }
+        setAddingExpForSlice(null);
       };
 
       const updateSlice = async (id, data) => {
@@ -1011,17 +1067,9 @@
               aVal = mouseA?.sex ?? '';
               bVal = mouseB?.sex ?? '';
               break;
-            case 'genotype':
-              aVal = mouseA?.genotype ?? '';
-              bVal = mouseB?.genotype ?? '';
-              break;
             case 'age':
               aVal = mouseA?.birthDate ? calculateAge(mouseA.birthDate).days : -1;
               bVal = mouseB?.birthDate ? calculateAge(mouseB.birthDate).days : -1;
-              break;
-            case 'sacrificeDate':
-              aVal = mouseA?.sacrificeDate ?? '';
-              bVal = mouseB?.sacrificeDate ?? '';
               break;
             default:
               aVal = a[sort.key] ?? '';
@@ -1034,10 +1082,20 @@
         });
       }, [slices, mice, searchTerm, searchField, filterMouseId, sort]);
 
-      const extendedSchema = [
-        { key: 'mouseId', label: 'Mouse', type: 'reference', referenceTable: 'mice', required: true },
-        ...sliceSchema
-      ];
+      const getSliceInfo = (slice) => {
+        const mouse = mice.find(m => m.id === slice.mouseId);
+        const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+        return {
+          mouseNumber: mouse?.mouseNumber || 'N/A',
+          sex: mouse?.sex || 'N/A',
+          age: age?.months ?? '?',
+          genotype: mouse?.genotype || 'N/A',
+          labeling: mouse?.labeling || 'N/A',
+          thickness: slice.thickness || 'N/A',
+          region: Array.isArray(slice.region) ? slice.region.join('/') : (slice.region || 'N/A'),
+          cryosectionDate: slice.cryosectionDate ? new Date(slice.cryosectionDate).toLocaleDateString() : 'N/A'
+        };
+      };
 
       return (
         <div>
@@ -1078,95 +1136,195 @@
             </button>
           </div>
 
-          {/* Sort buttons */}
-          <div className="flex gap-2 mb-3 flex-wrap text-xs">
-            <span className="text-gray-500 py-1">Sort by:</span>
-            {[
-              { key: 'mouseNumber', label: 'Mouse #' },
-              { key: 'sex', label: 'Sex' },
-              { key: 'age', label: 'Age' },
-              { key: 'sacrificeDate', label: 'Sacrifice' },
-              { key: 'genotype', label: 'Genotype' },
-              { key: 'cryosectionDate', label: 'Cryosection' },
-              { key: 'created_at', label: 'Added' },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => handleSort(key)}
-                className={`px-2 py-1 rounded ${sort.key === key ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-              >
-                {label} {sort.key === key && (sort.direction === 'asc' ? '↑' : '↓')}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-3">
-            {sortedAndFilteredSlices.length === 0 ? (
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-500">
-                {slices.length === 0 ? 'No slices yet. Add your first slice!' : 'No slices match your filters.'}
-              </div>
-            ) : (
-              sortedAndFilteredSlices.map(slice => {
-                const mouse = mice.find(m => m.id === slice.mouseId);
-                const expCount = experiments.filter(e => e.sliceId === slice.id).length;
-                const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
-                return (
-                  <div key={slice.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className="font-mono font-medium text-blue-400">{slice.id}</span>
-                          {mouse && (
-                            <span className="text-xs bg-purple-600/30 text-purple-400 px-2 py-0.5 rounded-full">
-                              {mouse.mouseNumber || mouse.id} ({mouse.sex})
-                            </span>
-                          )}
-                          {expCount > 0 && (
-                            <span className="text-xs bg-green-600/30 text-green-400 px-2 py-0.5 rounded-full">
-                              {expCount} exp
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-sm">
-                          {sliceSchema.map(field => (
-                            <div key={field.key}>
-                              <span className="text-gray-500">{field.label}: </span>
-                              <span className="text-gray-300">{renderCellValue(slice[field.key], field)}</span>
+          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-700/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">ID</th>
+                    <SortableHeader label="Mouse #" sortKey="mouseNumber" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Sex" sortKey="sex" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Age" sortKey="age" currentSort={sort} onSort={handleSort} />
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Genotype</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Labeling</th>
+                    <SortableHeader label="Thickness" sortKey="thickness" currentSort={sort} onSort={handleSort} />
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Region</th>
+                    <SortableHeader label="Cryo Date" sortKey="cryosectionDate" currentSort={sort} onSort={handleSort} />
+                    <th className="px-3 py-2 text-right font-medium text-gray-300">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {sortedAndFilteredSlices.length === 0 ? (
+                    <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                      {slices.length === 0 ? 'No slices yet. Add your first slice!' : 'No slices match your filters.'}
+                    </td></tr>
+                  ) : (
+                    sortedAndFilteredSlices.map(slice => {
+                      const info = getSliceInfo(slice);
+                      return (
+                        <tr key={slice.id} className="hover:bg-gray-700/30">
+                          <td className="px-3 py-2 font-mono text-blue-400 text-xs">{slice.id}</td>
+                          <td className="px-3 py-2 text-gray-300 font-medium">{info.mouseNumber}</td>
+                          <td className="px-3 py-2 text-gray-300">{info.sex}</td>
+                          <td className="px-3 py-2 text-gray-300">{info.age}m</td>
+                          <td className="px-3 py-2 text-gray-300">{info.genotype}</td>
+                          <td className="px-3 py-2 text-gray-300">{info.labeling}</td>
+                          <td className="px-3 py-2 text-gray-300">{info.thickness}μm</td>
+                          <td className="px-3 py-2 text-gray-300">{info.region}</td>
+                          <td className="px-3 py-2 text-gray-300">{info.cryosectionDate}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => setAddingExpForSlice(slice)} className="p-1.5 hover:bg-gray-600 rounded text-green-400" title="Add Experiment">
+                                <Icon name="Plus" className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => setEditingSlice(slice)} className="p-1.5 hover:bg-gray-600 rounded text-blue-400" title="Edit">
+                                <Icon name="Pencil" className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => deleteSlice(slice.id)} className="p-1.5 hover:bg-gray-600 rounded text-red-400" title="Delete">
+                                <Icon name="Trash2" className="w-4 h-4" />
+                              </button>
                             </div>
-                          ))}
-                        </div>
-                        {mouse && (
-                          <div className="mt-2 text-xs text-gray-500">
-                            Mouse: {mouse.genotype || 'No genotype'} | Age: {age?.months ?? '?'}m {age?.remainingDays !== null ? `${age.remainingDays}d` : ''} | Sacrifice: {mouse.sacrificeDate ? new Date(mouse.sacrificeDate).toLocaleDateString() : 'N/A'}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => setEditingSlice(slice)} className="p-2 hover:bg-gray-700 rounded-lg text-blue-400" title="Edit">
-                          <Icon name="Pencil" className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => deleteSlice(slice.id)} className="p-2 hover:bg-gray-700 rounded-lg text-red-400" title="Delete">
-                          <Icon name="Trash2" className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {showAdd && (
-            <Modal title="Add Slice" onClose={() => setShowAdd(false)}>
-              <DynamicForm schema={extendedSchema} onSubmit={addSlice} onCancel={() => setShowAdd(false)} submitLabel="Add Slice" references={{ mice }} />
+            <Modal title="Add Slice" onClose={() => setShowAdd(false)} large>
+              <AddSliceWithMousePicker mice={mice} sliceSchema={sliceSchema} onSubmit={addSlice} onCancel={() => setShowAdd(false)} />
             </Modal>
           )}
 
           {editingSlice && (
             <Modal title="Edit Slice" onClose={() => setEditingSlice(null)}>
-              <DynamicForm schema={extendedSchema} initialData={editingSlice} onSubmit={(data) => updateSlice(editingSlice.id, data)} onCancel={() => setEditingSlice(null)} submitLabel="Save Changes" references={{ mice }} />
+              <DynamicForm schema={sliceSchema} initialData={editingSlice} onSubmit={(data) => updateSlice(editingSlice.id, data)} onCancel={() => setEditingSlice(null)} submitLabel="Save Changes" />
             </Modal>
           )}
+
+          {addingExpForSlice && (
+            <Modal title="Add Experiment" onClose={() => setAddingExpForSlice(null)}>
+              <div className="mb-4 p-3 bg-blue-600/20 border border-blue-600/50 rounded-lg">
+                <div className="text-sm font-medium text-blue-300 mb-1">Adding experiment for slice:</div>
+                <div className="text-sm text-gray-300">
+                  {(() => {
+                    const info = getSliceInfo(addingExpForSlice);
+                    return `${info.mouseNumber} | ${info.sex} | ${info.age}m | ${info.genotype} | ${info.labeling} | ${info.thickness}μm | ${info.region} | ${info.cryosectionDate}`;
+                  })()}
+                </div>
+              </div>
+              <DynamicForm schema={experimentSchema} onSubmit={addExpForSlice} onCancel={() => setAddingExpForSlice(null)} submitLabel="Add Experiment" />
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================
+    // ADD SLICE WITH MOUSE PICKER
+    // ============================================
+    function AddSliceWithMousePicker({ mice, sliceSchema, onSubmit, onCancel }) {
+      const [selectedMouse, setSelectedMouse] = useState(null);
+      const [mouseSearchTerm, setMouseSearchTerm] = useState('');
+
+      const filteredMice = useMemo(() => {
+        if (!mouseSearchTerm) return mice;
+        const searchLower = mouseSearchTerm.toLowerCase();
+        return mice.filter(m => 
+          m.id.toLowerCase().includes(searchLower) ||
+          (m.mouseNumber && m.mouseNumber.toLowerCase().includes(searchLower)) ||
+          (m.genotype && m.genotype.toLowerCase().includes(searchLower)) ||
+          (m.labeling && m.labeling.toLowerCase().includes(searchLower))
+        );
+      }, [mice, mouseSearchTerm]);
+
+      const handleSubmit = (data) => {
+        onSubmit({ ...data, mouseId: selectedMouse.id });
+      };
+
+      if (!selectedMouse) {
+        return (
+          <div>
+            <div className="mb-3">
+              <label className="block text-sm text-gray-400 mb-2">Select Mouse</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2">
+                  <Icon name="Search" className="w-4 h-4 text-gray-400" />
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search mice..."
+                  value={mouseSearchTerm}
+                  onChange={(e) => setMouseSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 text-sm"
+                />
+              </div>
+            </div>
+            <div className="max-h-64 overflow-y-auto border border-gray-700 rounded-lg">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-700/50 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Mouse #</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Sex</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Age</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Genotype</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Labeling</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {filteredMice.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-4 text-center text-gray-500">No mice found</td></tr>
+                  ) : (
+                    filteredMice.map(mouse => {
+                      const age = calculateAge(mouse.birthDate, mouse.sacrificeDate);
+                      return (
+                        <tr 
+                          key={mouse.id} 
+                          onClick={() => setSelectedMouse(mouse)}
+                          className="hover:bg-purple-600/30 cursor-pointer"
+                        >
+                          <td className="px-3 py-2 text-gray-300 font-medium">{mouse.mouseNumber || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.sex || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{age.months ?? '?'}m</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.genotype || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.labeling || 'N/A'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={onCancel} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">
+                Cancel
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      const age = calculateAge(selectedMouse.birthDate, selectedMouse.sacrificeDate);
+      return (
+        <div>
+          <div className="mb-4 p-3 bg-purple-600/20 border border-purple-600/50 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-purple-300 mb-1">Selected mouse:</div>
+                <div className="text-sm text-gray-300">
+                  {selectedMouse.mouseNumber} | {selectedMouse.sex} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'}
+                </div>
+              </div>
+              <button onClick={() => setSelectedMouse(null)} className="text-xs text-purple-400 hover:text-purple-300">
+                Change
+              </button>
+            </div>
+          </div>
+          <DynamicForm schema={sliceSchema} onSubmit={handleSubmit} onCancel={onCancel} submitLabel="Add Slice" />
         </div>
       );
     }
@@ -1175,23 +1333,22 @@
     // EXPERIMENTS TAB
     // ============================================
     function ExperimentsTab() {
-      const { mice, slices, experiments, setExperiments, experimentSchema, sliceSchema, supabase, user } = useData();
+      const { mice, slices, experiments, setExperiments, experimentSchema, supabase, user } = useData();
       const [showAdd, setShowAdd] = useState(false);
       const [editingExp, setEditingExp] = useState(null);
       const [searchTerm, setSearchTerm] = useState('');
       const [searchField, setSearchField] = useState('all');
       const [filterSliceId, setFilterSliceId] = useState('');
       const [sort, setSort] = useState({ key: 'created_at', direction: 'desc' });
+      const [expandedRows, setExpandedRows] = useState(new Set());
+      const [allExpanded, setAllExpanded] = useState(false);
 
-      // Build search field options from schema (including mouse and slice fields)
       const searchFieldOptions = [
         { key: 'all', label: 'All Fields' },
         { key: 'id', label: 'Experiment ID' },
-        { key: 'slice.id', label: 'Slice ID' },
+        { key: 'title', label: 'Title' },
         { key: 'mouse.mouseNumber', label: 'Mouse Number' },
-        { key: 'mouse.sex', label: 'Mouse Sex' },
-        { key: 'mouse.genotype', label: 'Mouse Genotype' },
-        ...experimentSchema.map(f => ({ key: f.key, label: f.label }))
+        { key: 'mouse.genotype', label: 'Genotype' },
       ];
 
       const generateId = () => `E-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
@@ -1238,6 +1395,28 @@
         setSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
       };
 
+      const toggleRow = (id) => {
+        setExpandedRows(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(id)) {
+            newSet.delete(id);
+          } else {
+            newSet.add(id);
+          }
+          return newSet;
+        });
+      };
+
+      const toggleAllRows = () => {
+        if (allExpanded) {
+          setExpandedRows(new Set());
+          setAllExpanded(false);
+        } else {
+          setExpandedRows(new Set(sortedAndFilteredExperiments.map(e => e.id)));
+          setAllExpanded(true);
+        }
+      };
+
       const sortedAndFilteredExperiments = useMemo(() => {
         let filtered = experiments.filter(e => {
           if (!searchTerm && !filterSliceId) return true;
@@ -1249,15 +1428,12 @@
           if (searchTerm) {
             if (searchField === 'all') {
               matchesSearch = e.id.toLowerCase().includes(searchLower) ||
+                (e.title || '').toLowerCase().includes(searchLower) ||
                 Object.values(e).some(v => String(v).toLowerCase().includes(searchLower)) ||
-                (slice && Object.values(slice).some(v => String(v).toLowerCase().includes(searchLower))) ||
                 (mouse && Object.values(mouse).some(v => String(v).toLowerCase().includes(searchLower)));
             } else if (searchField.startsWith('mouse.')) {
               const mouseField = searchField.replace('mouse.', '');
               matchesSearch = mouse && mouse[mouseField] && String(mouse[mouseField]).toLowerCase().includes(searchLower);
-            } else if (searchField.startsWith('slice.')) {
-              const sliceField = searchField.replace('slice.', '');
-              matchesSearch = slice && slice[sliceField] && String(slice[sliceField]).toLowerCase().includes(searchLower);
             } else {
               const value = e[searchField];
               matchesSearch = value && String(value).toLowerCase().includes(searchLower);
@@ -1269,37 +1445,8 @@
         });
 
         return filtered.sort((a, b) => {
-          let aVal, bVal;
-          const sliceA = slices.find(s => s.id === a.sliceId);
-          const sliceB = slices.find(s => s.id === b.sliceId);
-          const mouseA = sliceA ? mice.find(m => m.id === sliceA.mouseId) : null;
-          const mouseB = sliceB ? mice.find(m => m.id === sliceB.mouseId) : null;
-
-          switch (sort.key) {
-            case 'mouseNumber':
-              aVal = mouseA?.mouseNumber ?? '';
-              bVal = mouseB?.mouseNumber ?? '';
-              break;
-            case 'sex':
-              aVal = mouseA?.sex ?? '';
-              bVal = mouseB?.sex ?? '';
-              break;
-            case 'genotype':
-              aVal = mouseA?.genotype ?? '';
-              bVal = mouseB?.genotype ?? '';
-              break;
-            case 'age':
-              aVal = mouseA?.birthDate ? calculateAge(mouseA.birthDate).days : -1;
-              bVal = mouseB?.birthDate ? calculateAge(mouseB.birthDate).days : -1;
-              break;
-            case 'sacrificeDate':
-              aVal = mouseA?.sacrificeDate ?? '';
-              bVal = mouseB?.sacrificeDate ?? '';
-              break;
-            default:
-              aVal = a[sort.key] ?? '';
-              bVal = b[sort.key] ?? '';
-          }
+          let aVal = a[sort.key] ?? '';
+          let bVal = b[sort.key] ?? '';
 
           if (aVal < bVal) return sort.direction === 'asc' ? -1 : 1;
           if (aVal > bVal) return sort.direction === 'asc' ? 1 : -1;
@@ -1307,10 +1454,23 @@
         });
       }, [experiments, slices, mice, searchTerm, searchField, filterSliceId, sort]);
 
-      const extendedSchema = [
-        { key: 'sliceId', label: 'Slice', type: 'reference', referenceTable: 'slices', required: true },
-        ...experimentSchema
-      ];
+      const getExpDetails = (exp) => {
+        const slice = slices.find(s => s.id === exp.sliceId);
+        const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
+        const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+        return {
+          slice,
+          mouse,
+          mouseNumber: mouse?.mouseNumber || 'N/A',
+          sex: mouse?.sex || 'N/A',
+          age: age?.months ?? '?',
+          genotype: mouse?.genotype || 'N/A',
+          labeling: mouse?.labeling || 'N/A',
+          thickness: slice?.thickness || 'N/A',
+          region: Array.isArray(slice?.region) ? slice.region.join('/') : (slice?.region || 'N/A'),
+          cryosectionDate: slice?.cryosectionDate ? new Date(slice.cryosectionDate).toLocaleDateString() : 'N/A'
+        };
+      };
 
       return (
         <div>
@@ -1336,141 +1496,299 @@
                 className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-purple-500 text-sm"
               />
             </div>
-            <select
-              value={filterSliceId}
-              onChange={(e) => setFilterSliceId(e.target.value)}
-              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm"
-            >
-              <option value="">All Slices</option>
-              {slices.map(s => {
-                const mouse = mice.find(m => m.id === s.mouseId);
-                return <option key={s.id} value={s.id}>{s.id} {mouse ? `(${mouse.mouseNumber})` : ''}</option>;
-              })}
-            </select>
+            <button onClick={toggleAllRows} className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">
+              <Icon name={allExpanded ? "ChevronsUpDown" : "ChevronsDownUp"} className="w-4 h-4" />
+              {allExpanded ? 'Collapse All' : 'Expand All'}
+            </button>
             <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm">
               <Icon name="Plus" className="w-4 h-4" /> Add Experiment
             </button>
           </div>
 
-          {/* Sort buttons */}
-          <div className="flex gap-2 mb-3 flex-wrap text-xs">
-            <span className="text-gray-500 py-1">Sort by:</span>
-            {[
-              { key: 'mouseNumber', label: 'Mouse #' },
-              { key: 'sex', label: 'Sex' },
-              { key: 'age', label: 'Age' },
-              { key: 'experimentDate', label: 'Exp Date' },
-              { key: 'sacrificeDate', label: 'Sacrifice' },
-              { key: 'genotype', label: 'Genotype' },
-              { key: 'created_at', label: 'Added' },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => handleSort(key)}
-                className={`px-2 py-1 rounded ${sort.key === key ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-              >
-                {label} {sort.key === key && (sort.direction === 'asc' ? '↑' : '↓')}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-3">
-            {sortedAndFilteredExperiments.length === 0 ? (
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-500">
-                {experiments.length === 0 ? 'No experiments yet. Add your first experiment!' : 'No experiments match your filters.'}
-              </div>
-            ) : (
-              sortedAndFilteredExperiments.map(exp => {
-                const slice = slices.find(s => s.id === exp.sliceId);
-                const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
-                const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
-                
-                // Separate fields into inline (short) and block (long) fields
-                const inlineFields = experimentSchema.filter(f => f.type !== 'textarea' && f.type !== 'multitext');
-                const blockFields = experimentSchema.filter(f => f.type === 'textarea' || f.type === 'multitext');
-                
-                return (
-                  <div key={exp.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className="font-mono font-medium text-green-400">{exp.id}</span>
-                          {slice && (
-                            <span className="text-xs bg-blue-600/30 text-blue-400 px-2 py-0.5 rounded-full">
-                              Slice: {slice.id}
-                            </span>
-                          )}
-                          {mouse && (
-                            <span className="text-xs bg-purple-600/30 text-purple-400 px-2 py-0.5 rounded-full">
-                              {mouse.mouseNumber || mouse.id} ({mouse.sex})
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-sm">
-                          {inlineFields.map(field => (
-                            <div key={field.key}>
-                              <span className="text-gray-500">{field.label}: </span>
-                              <span className="text-gray-300">{renderCellValue(exp[field.key], field)}</span>
-                            </div>
-                          ))}
-                          <div><span className="text-gray-500">Added: </span><span className="text-gray-300">{new Date(exp.created_at).toLocaleDateString()}</span></div>
-                        </div>
-                        {blockFields.map(field => {
-                          const value = exp[field.key];
-                          if (!value || (Array.isArray(value) && value.length === 0)) return null;
-                          
-                          if (field.type === 'multitext' && Array.isArray(value)) {
-                            return (
-                              <div key={field.key} className="mt-2 text-sm">
-                                <span className="text-gray-500">{field.label} ({value.length}): </span>
-                                <div className="text-gray-300 text-xs bg-gray-700/50 p-2 rounded mt-1 space-y-0.5">
-                                  {value.map((item, i) => (
-                                    <div key={i} className="font-mono truncate" title={item}>{item}</div>
-                                  ))}
-                                </div>
+          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-700/50">
+                  <tr>
+                    <th className="px-3 py-2 w-8"></th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">ID</th>
+                    <SortableHeader label="Exp Date" sortKey="experimentDate" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Title" sortKey="title" currentSort={sort} onSort={handleSort} />
+                    <th className="px-3 py-2 text-right font-medium text-gray-300">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {sortedAndFilteredExperiments.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                      {experiments.length === 0 ? 'No experiments yet. Add your first experiment!' : 'No experiments match your filters.'}
+                    </td></tr>
+                  ) : (
+                    sortedAndFilteredExperiments.map(exp => {
+                      const isExpanded = expandedRows.has(exp.id);
+                      const details = getExpDetails(exp);
+                      return (
+                        <React.Fragment key={exp.id}>
+                          <tr className="hover:bg-gray-700/30">
+                            <td className="px-3 py-2">
+                              <button onClick={() => toggleRow(exp.id)} className="p-1 hover:bg-gray-600 rounded">
+                                <Icon name={isExpanded ? "ChevronDown" : "ChevronRight"} className="w-4 h-4 text-gray-400" />
+                              </button>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-green-400 text-xs">{exp.id}</td>
+                            <td className="px-3 py-2 text-gray-300">{exp.experimentDate ? new Date(exp.experimentDate).toLocaleDateString() : 'N/A'}</td>
+                            <td className="px-3 py-2 text-gray-300">{exp.title || 'N/A'}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => setEditingExp(exp)} className="p-1.5 hover:bg-gray-600 rounded text-blue-400" title="Edit">
+                                  <Icon name="Pencil" className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => deleteExperiment(exp.id)} className="p-1.5 hover:bg-gray-600 rounded text-red-400" title="Delete">
+                                  <Icon name="Trash2" className="w-4 h-4" />
+                                </button>
                               </div>
-                            );
-                          }
-                          
-                          return (
-                            <div key={field.key} className="mt-2 text-sm">
-                              <span className="text-gray-500">{field.label}: </span>
-                              <pre className="text-gray-300 whitespace-pre-wrap text-xs bg-gray-700/50 p-2 rounded mt-1">{value}</pre>
-                            </div>
-                          );
-                        })}
-                        {mouse && (
-                          <div className="mt-2 text-xs text-gray-500">
-                            Mouse: {mouse.genotype || 'No genotype'} | Age: {age?.months ?? '?'}m {age?.remainingDays !== null ? `${age.remainingDays}d` : ''} | Sacrifice: {mouse.sacrificeDate ? new Date(mouse.sacrificeDate).toLocaleDateString() : 'N/A'}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => setEditingExp(exp)} className="p-2 hover:bg-gray-700 rounded-lg text-blue-400" title="Edit">
-                          <Icon name="Pencil" className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => deleteExperiment(exp.id)} className="p-2 hover:bg-gray-700 rounded-lg text-red-400" title="Delete">
-                          <Icon name="Trash2" className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-gray-700/20">
+                              <td colSpan={5} className="px-6 py-3">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                  <div><span className="text-gray-500">Mouse: </span><span className="text-gray-300">{details.mouseNumber}</span></div>
+                                  <div><span className="text-gray-500">Sex: </span><span className="text-gray-300">{details.sex}</span></div>
+                                  <div><span className="text-gray-500">Age: </span><span className="text-gray-300">{details.age}m</span></div>
+                                  <div><span className="text-gray-500">Genotype: </span><span className="text-gray-300">{details.genotype}</span></div>
+                                  <div><span className="text-gray-500">Labeling: </span><span className="text-gray-300">{details.labeling}</span></div>
+                                  <div><span className="text-gray-500">Thickness: </span><span className="text-gray-300">{details.thickness}μm</span></div>
+                                  <div><span className="text-gray-500">Region: </span><span className="text-gray-300">{details.region}</span></div>
+                                  <div><span className="text-gray-500">Cryo Date: </span><span className="text-gray-300">{details.cryosectionDate}</span></div>
+                                  {exp.operator && <div><span className="text-gray-500">Operator: </span><span className="text-gray-300">{exp.operator}</span></div>}
+                                </div>
+                                {exp.dataFiles && exp.dataFiles.length > 0 && (
+                                  <div className="mt-2 text-sm">
+                                    <span className="text-gray-500">Data Files ({exp.dataFiles.length}): </span>
+                                    <div className="text-gray-300 text-xs bg-gray-700/50 p-2 rounded mt-1 space-y-0.5">
+                                      {exp.dataFiles.map((file, i) => (
+                                        <div key={i} className="font-mono truncate" title={file}>{file}</div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {exp.protocol && (
+                                  <div className="mt-2 text-sm">
+                                    <span className="text-gray-500">Protocol: </span>
+                                    <pre className="text-gray-300 whitespace-pre-wrap text-xs bg-gray-700/50 p-2 rounded mt-1">{exp.protocol}</pre>
+                                  </div>
+                                )}
+                                {exp.results && (
+                                  <div className="mt-2 text-sm">
+                                    <span className="text-gray-500">Results: </span>
+                                    <pre className="text-gray-300 whitespace-pre-wrap text-xs bg-gray-700/50 p-2 rounded mt-1">{exp.results}</pre>
+                                  </div>
+                                )}
+                                {exp.notes && (
+                                  <div className="mt-2 text-sm">
+                                    <span className="text-gray-500">Notes: </span>
+                                    <pre className="text-gray-300 whitespace-pre-wrap text-xs bg-gray-700/50 p-2 rounded mt-1">{exp.notes}</pre>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {showAdd && (
-            <Modal title="Add Experiment" onClose={() => setShowAdd(false)}>
-              <DynamicForm schema={extendedSchema} onSubmit={addExperiment} onCancel={() => setShowAdd(false)} submitLabel="Add Experiment" references={{ slices, mice }} />
+            <Modal title="Add Experiment" onClose={() => setShowAdd(false)} large>
+              <AddExperimentWithPicker mice={mice} slices={slices} experimentSchema={experimentSchema} onSubmit={addExperiment} onCancel={() => setShowAdd(false)} />
             </Modal>
           )}
 
           {editingExp && (
             <Modal title="Edit Experiment" onClose={() => setEditingExp(null)}>
-              <DynamicForm schema={extendedSchema} initialData={editingExp} onSubmit={(data) => updateExperiment(editingExp.id, data)} onCancel={() => setEditingExp(null)} submitLabel="Save Changes" references={{ slices, mice }} />
+              <DynamicForm schema={experimentSchema} initialData={editingExp} onSubmit={(data) => updateExperiment(editingExp.id, data)} onCancel={() => setEditingExp(null)} submitLabel="Save Changes" />
             </Modal>
           )}
+        </div>
+      );
+    }
+
+    // ============================================
+    // ADD EXPERIMENT WITH MOUSE/SLICE PICKER
+    // ============================================
+    function AddExperimentWithPicker({ mice, slices, experimentSchema, onSubmit, onCancel }) {
+      const [selectedMouse, setSelectedMouse] = useState(null);
+      const [selectedSlice, setSelectedSlice] = useState(null);
+      const [mouseSearchTerm, setMouseSearchTerm] = useState('');
+
+      const filteredMice = useMemo(() => {
+        if (!mouseSearchTerm) return mice;
+        const searchLower = mouseSearchTerm.toLowerCase();
+        return mice.filter(m => 
+          m.id.toLowerCase().includes(searchLower) ||
+          (m.mouseNumber && m.mouseNumber.toLowerCase().includes(searchLower)) ||
+          (m.genotype && m.genotype.toLowerCase().includes(searchLower)) ||
+          (m.labeling && m.labeling.toLowerCase().includes(searchLower))
+        );
+      }, [mice, mouseSearchTerm]);
+
+      const mouseSlices = useMemo(() => {
+        if (!selectedMouse) return [];
+        return slices.filter(s => s.mouseId === selectedMouse.id);
+      }, [slices, selectedMouse]);
+
+      const handleSubmit = (data) => {
+        onSubmit({ ...data, sliceId: selectedSlice.id });
+      };
+
+      // Step 1: Select Mouse
+      if (!selectedMouse) {
+        return (
+          <div>
+            <div className="mb-3">
+              <label className="block text-sm text-gray-400 mb-2">Step 1: Select Mouse</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2">
+                  <Icon name="Search" className="w-4 h-4 text-gray-400" />
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search mice..."
+                  value={mouseSearchTerm}
+                  onChange={(e) => setMouseSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 text-sm"
+                />
+              </div>
+            </div>
+            <div className="max-h-64 overflow-y-auto border border-gray-700 rounded-lg">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-700/50 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Mouse #</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Sex</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Age</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Genotype</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Labeling</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {filteredMice.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-4 text-center text-gray-500">No mice found</td></tr>
+                  ) : (
+                    filteredMice.map(mouse => {
+                      const age = calculateAge(mouse.birthDate, mouse.sacrificeDate);
+                      return (
+                        <tr 
+                          key={mouse.id} 
+                          onClick={() => setSelectedMouse(mouse)}
+                          className="hover:bg-purple-600/30 cursor-pointer"
+                        >
+                          <td className="px-3 py-2 text-gray-300 font-medium">{mouse.mouseNumber || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.sex || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{age.months ?? '?'}m</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.genotype || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.labeling || 'N/A'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={onCancel} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">
+                Cancel
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // Step 2: Select Slice
+      if (!selectedSlice) {
+        const age = calculateAge(selectedMouse.birthDate, selectedMouse.sacrificeDate);
+        return (
+          <div>
+            <div className="mb-4 p-3 bg-purple-600/20 border border-purple-600/50 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-purple-300 mb-1">Selected mouse:</div>
+                  <div className="text-sm text-gray-300">
+                    {selectedMouse.mouseNumber} | {selectedMouse.sex} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'}
+                  </div>
+                </div>
+                <button onClick={() => setSelectedMouse(null)} className="text-xs text-purple-400 hover:text-purple-300">
+                  Change
+                </button>
+              </div>
+            </div>
+            
+            <div className="mb-3">
+              <label className="block text-sm text-gray-400 mb-2">Step 2: Select Slice</label>
+            </div>
+            
+            {mouseSlices.length === 0 ? (
+              <div className="p-4 bg-yellow-600/20 border border-yellow-600/50 rounded-lg text-yellow-400 text-sm">
+                No slices found for this mouse. Please add a slice first.
+              </div>
+            ) : (
+              <div className="max-h-48 overflow-y-auto border border-gray-700 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-700/50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium text-gray-300">ID</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-300">Region</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-300">Thickness</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-300">Cryo Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {mouseSlices.map(slice => (
+                      <tr 
+                        key={slice.id} 
+                        onClick={() => setSelectedSlice(slice)}
+                        className="hover:bg-blue-600/30 cursor-pointer"
+                      >
+                        <td className="px-3 py-2 text-blue-400 font-mono text-xs">{slice.id}</td>
+                        <td className="px-3 py-2 text-gray-300">{Array.isArray(slice.region) ? slice.region.join('/') : slice.region || 'N/A'}</td>
+                        <td className="px-3 py-2 text-gray-300">{slice.thickness || 'N/A'}μm</td>
+                        <td className="px-3 py-2 text-gray-300">{slice.cryosectionDate ? new Date(slice.cryosectionDate).toLocaleDateString() : 'N/A'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            
+            <div className="mt-4 flex justify-end">
+              <button onClick={onCancel} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">
+                Cancel
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // Step 3: Fill in experiment details
+      const age = calculateAge(selectedMouse.birthDate, selectedMouse.sacrificeDate);
+      return (
+        <div>
+          <div className="mb-4 p-3 bg-blue-600/20 border border-blue-600/50 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-blue-300">Selected slice:</div>
+              <button onClick={() => setSelectedSlice(null)} className="text-xs text-blue-400 hover:text-blue-300">
+                Change
+              </button>
+            </div>
+            <div className="text-sm text-gray-300">
+              {selectedMouse.mouseNumber} | {selectedMouse.sex} | {age.months ?? '?'}m | {selectedMouse.genotype || 'N/A'} | {selectedMouse.labeling || 'N/A'} | {selectedSlice.thickness}μm | {Array.isArray(selectedSlice.region) ? selectedSlice.region.join('/') : selectedSlice.region} | {selectedSlice.cryosectionDate ? new Date(selectedSlice.cryosectionDate).toLocaleDateString() : 'N/A'}
+            </div>
+          </div>
+          <DynamicForm schema={experimentSchema} onSubmit={handleSubmit} onCancel={onCancel} submitLabel="Add Experiment" />
         </div>
       );
     }
@@ -1615,8 +1933,7 @@
                 hyphens: auto;
               }
               .id { font-weight: bold; font-size: ${labelConfig.fontSize + 0.5}pt; margin-bottom: 0.5mm; }
-              .section { margin-top: 0.8mm; padding-top: 0.8mm; border-top: 0.4pt dashed #666; }
-              .section-title { font-weight: bold; font-size: ${Math.max(labelConfig.fontSize - 1, 4)}pt; color: #555; margin-bottom: 0.3mm; }
+              .exp-section { margin-top: 0.8mm; padding-top: 0.8mm; border-top: 0.4pt dashed #666; }
               .row { margin: 0.2mm 0; overflow-wrap: break-word; }
             </style>
           </head>
@@ -1625,42 +1942,20 @@
               <div class="label">
                 <div class="id">${exp.id}</div>
                 ${labelConfig.showMouseInfo && mouse ? `
-                  <div class="section">
-                    <div class="section-title">MOUSE</div>
-                    ${labelConfig.selectedMouseFields.map(key => {
-                      if (key === 'age' && age) {
-                        return `<div class="row">Age: ${age.months}m ${age.remainingDays}d (${age.days}d)</div>`;
-                      }
-                      const field = mouseSchema.find(f => f.key === key);
-                      const val = mouse[key];
-                      if (!field || !val) return '';
-                      return `<div class="row">${field.label}: ${field.type === 'date' ? new Date(val).toLocaleDateString() : val}</div>`;
-                    }).join('')}
-                  </div>
+                  <div class="row">${mouse.mouseNumber || '?'}/${mouse.sex || '?'}/${age?.months ?? '?'}/${mouse.genotype || '?'}</div>
                 ` : ''}
                 ${labelConfig.showSliceInfo && slice ? `
-                  <div class="section">
-                    <div class="section-title">SLICE</div>
-                    <div class="row">ID: ${slice.id}</div>
-                    ${labelConfig.selectedSliceFields.map(key => {
-                      const field = sliceSchema.find(f => f.key === key);
-                      let val = slice[key];
-                      if (!field || !val) return '';
-                      if (Array.isArray(val)) val = val.join(', ');
-                      if (field.type === 'date') val = new Date(val).toLocaleDateString();
-                      return `<div class="row">${field.label}: ${val}</div>`;
-                    }).join('')}
-                  </div>
+                  <div class="row">${slice.id}</div>
+                  <div class="row">${Array.isArray(slice.region) ? slice.region.join('/') : (slice.region || '?')}/${slice.thickness || '?'}μm${slice.cryosectionDate ? '/' + new Date(slice.cryosectionDate).toLocaleDateString() : ''}</div>
                 ` : ''}
                 ${labelConfig.showExperimentInfo ? `
-                  <div class="section">
-                    <div class="section-title">EXPERIMENT</div>
+                  <div class="exp-section">
                     ${labelConfig.selectedExperimentFields.map(key => {
                       const field = experimentSchema.find(f => f.key === key);
                       let val = exp[key];
                       if (!field || !val) return '';
                       if (field.type === 'date') val = new Date(val).toLocaleDateString();
-                      return `<div class="row">${field.label}: ${val}</div>`;
+                      return `<div class="row">${val}</div>`;
                     }).join('')}
                   </div>
                 ` : ''}
@@ -1746,17 +2041,17 @@
             >
               <div style={{ fontWeight: 'bold', fontSize: `${labelConfig.fontSize + 0.5}pt` }}>E-SAMPLE-ID</div>
               {labelConfig.showMouseInfo && (
-                <div style={{ marginTop: '3px', paddingTop: '3px', borderTop: '0.5px dashed #999' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: `${Math.max(labelConfig.fontSize - 1, 4)}pt`, color: '#555' }}>MOUSE</div>
-                  <div>Mouse #: M001</div>
-                  <div>Sex: Male</div>
-                </div>
+                <div style={{ marginTop: '2px' }}>M001/M/7/WT</div>
               )}
               {labelConfig.showSliceInfo && (
+                <>
+                  <div style={{ marginTop: '2px' }}>S-SAMPLE-ID</div>
+                  <div>H/C/16μm/1/24/25</div>
+                </>
+              )}
+              {labelConfig.showExperimentInfo && (
                 <div style={{ marginTop: '3px', paddingTop: '3px', borderTop: '0.5px dashed #999' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: `${Math.max(labelConfig.fontSize - 1, 4)}pt`, color: '#555' }}>SLICE</div>
-                  <div>ID: S-SAMPLE</div>
-                  <div>Region: Hippocampus</div>
+                  1/24/2025
                 </div>
               )}
             </div>
