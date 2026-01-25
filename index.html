@@ -843,7 +843,16 @@
 
       const updateMouse = async (id, data) => {
         if (supabase && user && !user.offline) {
-          await supabase.from('mice').update(data).eq('id', id);
+          try {
+            const { error } = await supabase.from('mice').update(data).eq('id', id);
+            if (error) {
+              console.error('Supabase error updating mouse:', error);
+              alert('Error saving to cloud: ' + error.message + '\n\nChanges saved locally only.');
+            }
+          } catch (err) {
+            console.error('Error updating mouse:', err);
+            alert('Error saving to cloud. Changes saved locally only.');
+          }
         }
         setMice(mice.map(m => m.id === id ? { ...m, ...data } : m));
         setEditingMouse(null);
@@ -1086,7 +1095,16 @@
 
       const updateSlice = async (id, data) => {
         if (supabase && user && !user.offline) {
-          await supabase.from('slices').update(data).eq('id', id);
+          try {
+            const { error } = await supabase.from('slices').update(data).eq('id', id);
+            if (error) {
+              console.error('Supabase error updating slice:', error);
+              alert('Error saving to cloud: ' + error.message + '\n\nChanges saved locally only.');
+            }
+          } catch (err) {
+            console.error('Error updating slice:', err);
+            alert('Error saving to cloud. Changes saved locally only.');
+          }
         }
         setSlices(slices.map(s => s.id === id ? { ...s, ...data } : s));
         setEditingSlice(null);
@@ -1459,7 +1477,16 @@
 
       const updateExperiment = async (id, data) => {
         if (supabase && user && !user.offline) {
-          await supabase.from('experiments').update(data).eq('id', id);
+          try {
+            const { error } = await supabase.from('experiments').update(data).eq('id', id);
+            if (error) {
+              console.error('Supabase error updating experiment:', error);
+              alert('Error saving to cloud: ' + error.message + '\n\nChanges saved locally only.');
+            }
+          } catch (err) {
+            console.error('Error updating experiment:', err);
+            alert('Error saving to cloud. Changes saved locally only.');
+          }
         }
         setExperiments(experiments.map(e => e.id === id ? { ...e, ...data } : e));
         setEditingExp(null);
