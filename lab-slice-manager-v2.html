@@ -1,0 +1,2107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lab Slice Manager</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #1f2937; }
+    ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo, createContext, useContext } = React;
+
+    // ============================================
+    // CONFIGURATION - Edit these for your Supabase
+    // ============================================
+    const SUPABASE_URL = 'https://dcvaenscfybcfalgmrgx.supabase.co'; // e.g., 'https://xxxx.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdmFlbnNjZnliY2ZhbGdtcmd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyODk4NjUsImV4cCI6MjA4NDg2NTg2NX0.FVAm8I_ycP531RHalj3wAXjPm-A15AtNDSqRk1Mfu9E'; // Your anon/public key
+    
+    const supabase = SUPABASE_URL && SUPABASE_ANON_KEY 
+      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+      : null;
+
+    // ============================================
+    // ICON COMPONENT
+    // ============================================
+    const Icon = ({ name, className = "w-5 h-5" }) => {
+      const iconRef = useRef(null);
+      useEffect(() => {
+        if (iconRef.current && lucide.icons[name]) {
+          iconRef.current.innerHTML = '';
+          const icon = lucide.createElement(lucide.icons[name]);
+          iconRef.current.appendChild(icon);
+        }
+      }, [name]);
+      return <span ref={iconRef} className={`inline-flex items-center justify-center ${className}`} />;
+    };
+
+    // ============================================
+    // DEFAULT SCHEMAS
+    // ============================================
+    const DEFAULT_MOUSE_SCHEMA = [
+      { key: 'mouseNumber', label: 'Mouse Number', type: 'text', required: true },
+      { key: 'sex', label: 'Sex', type: 'select', options: ['Male', 'Female'], required: true },
+      { key: 'genotype', label: 'Genotype', type: 'text', required: false },
+      { key: 'birthDate', label: 'Birth Date', type: 'date', required: false },
+      { key: 'sacrificeDate', label: 'Sacrifice Date', type: 'date', required: false },
+      { key: 'notes', label: 'Notes', type: 'textarea', required: false },
+    ];
+
+    const DEFAULT_SLICE_SCHEMA = [
+      { key: 'region', label: 'Brain Region', type: 'multicheck', options: ['Hippocampus', 'Cortex'], required: true },
+      { key: 'thickness', label: 'Thickness (μm)', type: 'number', required: true, default: 16 },
+      { key: 'cryosectionDate', label: 'Cryosection Date', type: 'date', required: false },
+      { key: 'embeddingMatrix', label: 'Embedding Matrix', type: 'select', options: ['TFM', 'OCT'], required: false, default: 'TFM' },
+      { key: 'sliceNumber', label: 'Slice Number', type: 'number', required: false },
+      { key: 'quality', label: 'Quality', type: 'select', options: ['Excellent', 'Good', 'Fair', 'Poor'], required: false },
+      { key: 'storageLocation', label: 'Storage Location', type: 'text', required: false },
+      { key: 'notes', label: 'Notes', type: 'textarea', required: false },
+    ];
+
+    const DEFAULT_EXPERIMENT_SCHEMA = [
+      { key: 'experimentDate', label: 'Experiment Date', type: 'date', required: true },
+      { key: 'dataFiles', label: 'Data File Paths', type: 'multitext', required: false },
+      { key: 'protocol', label: 'Protocol', type: 'textarea', required: false },
+      { key: 'operator', label: 'Operator', type: 'text', required: false },
+      { key: 'results', label: 'Results Summary', type: 'textarea', required: false },
+      { key: 'notes', label: 'Notes', type: 'textarea', required: false },
+    ];
+
+    const DEFAULT_LABEL_CONFIG = {
+      fontSize: 7,
+      showMouseInfo: true,
+      showSliceInfo: true,
+      showExperimentInfo: true,
+      selectedMouseFields: ['mouseNumber', 'sex', 'genotype', 'sacrificeDate'],
+      selectedSliceFields: ['region', 'thickness'],
+      selectedExperimentFields: ['experimentDate'],
+      labelWidth: 38,
+      labelMaxWidth: 50,
+    };
+
+    // ============================================
+    // UTILITY FUNCTIONS
+    // ============================================
+    function calculateAge(birthDate, referenceDate = null) {
+      if (!birthDate) return { days: null, months: null, remainingDays: null };
+      const birth = new Date(birthDate);
+      const ref = referenceDate ? new Date(referenceDate) : new Date();
+      const diffTime = ref - birth;
+      const totalDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      // Calculate months (approximate: 30.44 days per month)
+      const months = Math.floor(totalDays / 30.44);
+      const remainingDays = Math.floor(totalDays % 30.44);
+      return { days: totalDays, months, remainingDays };
+    }
+
+    function formatFieldValue(value, type) {
+      if (value === null || value === undefined || value === '') return '';
+      if (type === 'date') {
+        return new Date(value).toLocaleDateString();
+      }
+      if (type === 'multicheck' && Array.isArray(value)) {
+        return value.join(', ');
+      }
+      return String(value);
+    }
+
+    function getNestedValue(obj, path) {
+      return path.split('.').reduce((acc, part) => acc && acc[part], obj);
+    }
+
+    // ============================================
+    // DATA CONTEXT
+    // ============================================
+    const DataContext = createContext(null);
+    const useData = () => useContext(DataContext);
+
+    // ============================================
+    // MAIN APP
+    // ============================================
+    function App() {
+      const [user, setUser] = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+      
+      const [mice, setMice] = useState([]);
+      const [slices, setSlices] = useState([]);
+      const [experiments, setExperiments] = useState([]);
+      const [mouseSchema, setMouseSchema] = useState(DEFAULT_MOUSE_SCHEMA);
+      const [sliceSchema, setSliceSchema] = useState(DEFAULT_SLICE_SCHEMA);
+      const [experimentSchema, setExperimentSchema] = useState(DEFAULT_EXPERIMENT_SCHEMA);
+      const [labelConfig, setLabelConfig] = useState(DEFAULT_LABEL_CONFIG);
+      const [dataLoaded, setDataLoaded] = useState(false);
+
+      useEffect(() => {
+        if (supabase) {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+            setAuthLoading(false);
+          });
+
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+          });
+
+          return () => subscription.unsubscribe();
+        } else {
+          setUser({ offline: true });
+          setAuthLoading(false);
+        }
+      }, []);
+
+      useEffect(() => {
+        if (user && !dataLoaded) {
+          loadData();
+        }
+      }, [user, dataLoaded]);
+
+      const loadData = async () => {
+        if (supabase && user && !user.offline) {
+          try {
+            const [miceRes, slicesRes, expRes, schemaRes] = await Promise.all([
+              supabase.from('mice').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+              supabase.from('slices').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+              supabase.from('experiments').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+              supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
+            ]);
+
+            if (miceRes.data) setMice(miceRes.data);
+            if (slicesRes.data) setSlices(slicesRes.data);
+            if (expRes.data) setExperiments(expRes.data);
+            if (schemaRes.data) {
+              if (schemaRes.data.mouse_schema) setMouseSchema(schemaRes.data.mouse_schema);
+              if (schemaRes.data.slice_schema) setSliceSchema(schemaRes.data.slice_schema);
+              if (schemaRes.data.experiment_schema) setExperimentSchema(schemaRes.data.experiment_schema);
+              if (schemaRes.data.label_config) setLabelConfig(schemaRes.data.label_config);
+            }
+          } catch (err) {
+            console.error('Error loading from Supabase:', err);
+          }
+        } else {
+          const savedMice = localStorage.getItem('labManager_mice');
+          const savedSlices = localStorage.getItem('labManager_slices');
+          const savedExperiments = localStorage.getItem('labManager_experiments');
+          const savedMouseSchema = localStorage.getItem('labManager_mouseSchema');
+          const savedSliceSchema = localStorage.getItem('labManager_sliceSchema');
+          const savedExperimentSchema = localStorage.getItem('labManager_experimentSchema');
+          const savedLabelConfig = localStorage.getItem('labManager_labelConfig');
+
+          if (savedMice) setMice(JSON.parse(savedMice));
+          if (savedSlices) setSlices(JSON.parse(savedSlices));
+          if (savedExperiments) setExperiments(JSON.parse(savedExperiments));
+          if (savedMouseSchema) setMouseSchema(JSON.parse(savedMouseSchema));
+          if (savedSliceSchema) setSliceSchema(JSON.parse(savedSliceSchema));
+          if (savedExperimentSchema) setExperimentSchema(JSON.parse(savedExperimentSchema));
+          if (savedLabelConfig) setLabelConfig(JSON.parse(savedLabelConfig));
+        }
+        setDataLoaded(true);
+      };
+
+      useEffect(() => {
+        if (dataLoaded) {
+          localStorage.setItem('labManager_mice', JSON.stringify(mice));
+          localStorage.setItem('labManager_slices', JSON.stringify(slices));
+          localStorage.setItem('labManager_experiments', JSON.stringify(experiments));
+          localStorage.setItem('labManager_mouseSchema', JSON.stringify(mouseSchema));
+          localStorage.setItem('labManager_sliceSchema', JSON.stringify(sliceSchema));
+          localStorage.setItem('labManager_experimentSchema', JSON.stringify(experimentSchema));
+          localStorage.setItem('labManager_labelConfig', JSON.stringify(labelConfig));
+        }
+      }, [mice, slices, experiments, mouseSchema, sliceSchema, experimentSchema, labelConfig, dataLoaded]);
+
+      useEffect(() => {
+        if (supabase && user && !user.offline && dataLoaded) {
+          const timer = setTimeout(() => {
+            syncToSupabase();
+          }, 2000);
+          return () => clearTimeout(timer);
+        }
+      }, [mice, slices, experiments, mouseSchema, sliceSchema, experimentSchema, labelConfig]);
+
+      const syncToSupabase = async () => {
+        if (!supabase || !user || user.offline) return;
+        try {
+          await supabase.from('user_settings').upsert({
+            user_id: user.id,
+            mouse_schema: mouseSchema,
+            slice_schema: sliceSchema,
+            experiment_schema: experimentSchema,
+            label_config: labelConfig,
+            updated_at: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.error('Sync error:', err);
+        }
+      };
+
+      const contextValue = {
+        mice, setMice,
+        slices, setSlices,
+        experiments, setExperiments,
+        mouseSchema, setMouseSchema,
+        sliceSchema, setSliceSchema,
+        experimentSchema, setExperimentSchema,
+        labelConfig, setLabelConfig,
+        user, supabase,
+      };
+
+      if (authLoading) {
+        return (
+          <div className="min-h-screen bg-gray-900 text-gray-100 flex items-center justify-center">
+            <div className="text-center">
+              <Icon name="Loader2" className="w-8 h-8 animate-spin mx-auto mb-4" />
+              <p>Loading...</p>
+            </div>
+          </div>
+        );
+      }
+
+      if (!user) {
+        return <AuthScreen setUser={setUser} />;
+      }
+
+      return (
+        <DataContext.Provider value={contextValue}>
+          <MainApp />
+        </DataContext.Provider>
+      );
+    }
+
+    // ============================================
+    // AUTH SCREEN
+    // ============================================
+    function AuthScreen({ setUser }) {
+      const [email, setEmail] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [message, setMessage] = useState('');
+      const [showOtpInput, setShowOtpInput] = useState(false);
+      const [otp, setOtp] = useState('');
+
+      const handleMagicLink = async (e) => {
+        e.preventDefault();
+        if (!supabase) {
+          setMessage('Supabase not configured. Using offline mode.');
+          setTimeout(() => setUser({ offline: true }), 1500);
+          return;
+        }
+
+        setLoading(true);
+        setMessage('');
+
+        try {
+          const { error } = await supabase.auth.signInWithOtp({
+            email,
+            options: { emailRedirectTo: window.location.origin }
+          });
+          if (error) throw error;
+          setMessage('Check your email for the magic link or enter the OTP code!');
+          setShowOtpInput(true);
+        } catch (error) {
+          setMessage(error.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleOtpVerify = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+          const { error } = await supabase.auth.verifyOtp({
+            email, token: otp, type: 'email'
+          });
+          if (error) throw error;
+        } catch (error) {
+          setMessage(error.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-900 text-gray-100 flex items-center justify-center p-4">
+          <div className="w-full max-w-md">
+            <div className="text-center mb-8">
+              <div className="flex items-center justify-center gap-3 mb-4">
+                <Icon name="Brain" className="w-10 h-10 text-purple-400" />
+                <h1 className="text-2xl font-bold">Lab Slice Manager</h1>
+              </div>
+              <p className="text-gray-400">Manage your brain slices and experiments</p>
+            </div>
+
+            <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+              {!showOtpInput ? (
+                <form onSubmit={handleMagicLink} className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Email Address</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-purple-500"
+                      placeholder="you@example.com"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    {loading ? <><Icon name="Loader2" className="w-5 h-5 animate-spin" /> Sending...</> : <><Icon name="Mail" className="w-5 h-5" /> Send Magic Link</>}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleOtpVerify} className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Enter OTP Code</label>
+                    <input
+                      type="text"
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-purple-500 text-center text-2xl tracking-widest"
+                      placeholder="000000"
+                      maxLength={6}
+                      required
+                    />
+                  </div>
+                  <button type="submit" disabled={loading} className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 rounded-lg font-medium">
+                    {loading ? 'Verifying...' : 'Verify OTP'}
+                  </button>
+                  <button type="button" onClick={() => setShowOtpInput(false)} className="w-full py-2 text-gray-400 hover:text-white text-sm">
+                    ← Back to email
+                  </button>
+                </form>
+              )}
+
+              {message && (
+                <div className={`mt-4 p-3 rounded-lg text-sm ${message.includes('Check') ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
+                  {message}
+                </div>
+              )}
+
+              <div className="mt-6 pt-6 border-t border-gray-700">
+                <button
+                  onClick={() => setUser({ offline: true })}
+                  className="w-full py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  <Icon name="HardDrive" className="w-5 h-5" /> Continue Offline
+                </button>
+                <p className="text-xs text-gray-500 text-center mt-2">
+                  Data stored locally. Use Export/Import to sync between devices.
+                </p>
+              </div>
+            </div>
+
+            {!supabase && (
+              <div className="mt-4 p-4 bg-yellow-600/20 border border-yellow-600/50 rounded-lg">
+                <p className="text-sm text-yellow-400">
+                  <strong>Note:</strong> Supabase not configured. Online sync disabled.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================
+    // MAIN APP LAYOUT
+    // ============================================
+    function MainApp() {
+      const { user, supabase } = useData();
+      const [activeTab, setActiveTab] = useState('mice');
+      const [showSettings, setShowSettings] = useState(false);
+      const [showBackup, setShowBackup] = useState(false);
+
+      const handleSignOut = async () => {
+        if (supabase && !user.offline) {
+          await supabase.auth.signOut();
+        }
+        window.location.reload();
+      };
+
+      const tabs = [
+        { id: 'mice', label: 'Mice', icon: 'Mouse' },
+        { id: 'slices', label: 'Slices', icon: 'Brain' },
+        { id: 'experiments', label: 'Experiments', icon: 'FlaskConical' },
+        { id: 'labels', label: 'Labels', icon: 'Tag' },
+      ];
+
+      return (
+        <div className="min-h-screen bg-gray-900 text-gray-100">
+          <header className="bg-gray-800 border-b border-gray-700 px-4 py-3">
+            <div className="flex items-center justify-between max-w-7xl mx-auto">
+              <div className="flex items-center gap-3">
+                <Icon name="Brain" className="w-6 h-6 text-purple-400" />
+                <h1 className="text-lg font-semibold">Lab Slice Manager</h1>
+                {user.offline ? (
+                  <span className="text-xs bg-yellow-600/30 text-yellow-400 px-2 py-1 rounded-full">Offline</span>
+                ) : (
+                  <span className="text-xs bg-green-600/30 text-green-400 px-2 py-1 rounded-full">Synced</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowBackup(true)} className="p-2 hover:bg-gray-700 rounded-lg" title="Backup & Restore">
+                  <Icon name="Database" className="w-5 h-5" />
+                </button>
+                <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-700 rounded-lg" title="Settings">
+                  <Icon name="Settings" className="w-5 h-5" />
+                </button>
+                <button onClick={handleSignOut} className="p-2 hover:bg-gray-700 rounded-lg text-red-400" title="Sign Out">
+                  <Icon name="LogOut" className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <nav className="bg-gray-800/50 border-b border-gray-700 px-4">
+            <div className="max-w-7xl mx-auto flex gap-1 overflow-x-auto">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+                    activeTab === tab.id ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Icon name={tab.icon} className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </nav>
+
+          <main className="max-w-7xl mx-auto p-4">
+            {activeTab === 'mice' && <MiceTab />}
+            {activeTab === 'slices' && <SlicesTab />}
+            {activeTab === 'experiments' && <ExperimentsTab />}
+            {activeTab === 'labels' && <LabelsTab />}
+          </main>
+
+          {showSettings && (
+            <Modal title="Settings & Schema Editor" onClose={() => setShowSettings(false)} large>
+              <SettingsPanel onClose={() => setShowSettings(false)} />
+            </Modal>
+          )}
+
+          {showBackup && (
+            <Modal title="Backup & Restore" onClose={() => setShowBackup(false)}>
+              <BackupPanel onClose={() => setShowBackup(false)} />
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================
+    // SORTABLE HEADER COMPONENT
+    // ============================================
+    function SortableHeader({ label, sortKey, currentSort, onSort, className = '' }) {
+      const isActive = currentSort.key === sortKey;
+      const direction = isActive ? currentSort.direction : null;
+
+      return (
+        <th
+          className={`px-3 py-2 text-left font-medium text-gray-300 cursor-pointer hover:bg-gray-600/50 select-none ${className}`}
+          onClick={() => onSort(sortKey)}
+        >
+          <div className="flex items-center gap-1">
+            {label}
+            <span className="text-gray-500">
+              {direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '⇅'}
+            </span>
+          </div>
+        </th>
+      );
+    }
+
+    // ============================================
+    // MICE TAB
+    // ============================================
+    function MiceTab() {
+      const { mice, setMice, slices, mouseSchema, supabase, user } = useData();
+      const [showAdd, setShowAdd] = useState(false);
+      const [editingMouse, setEditingMouse] = useState(null);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [searchField, setSearchField] = useState('all');
+      const [sort, setSort] = useState({ key: 'created_at', direction: 'desc' });
+
+      // Build search field options from schema
+      const searchFieldOptions = [
+        { key: 'all', label: 'All Fields' },
+        { key: 'id', label: 'ID' },
+        ...mouseSchema.map(f => ({ key: f.key, label: f.label }))
+      ];
+
+      const generateId = () => `M-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
+
+      const addMouse = async (data) => {
+        const newMouse = { id: generateId(), created_at: new Date().toISOString(), ...data };
+        if (supabase && user && !user.offline) {
+          const { data: inserted, error } = await supabase.from('mice').insert({ ...newMouse, user_id: user.id }).select().single();
+          if (!error && inserted) setMice([inserted, ...mice]);
+        } else {
+          setMice([newMouse, ...mice]);
+        }
+        setShowAdd(false);
+      };
+
+      const updateMouse = async (id, data) => {
+        if (supabase && user && !user.offline) {
+          await supabase.from('mice').update(data).eq('id', id);
+        }
+        setMice(mice.map(m => m.id === id ? { ...m, ...data } : m));
+        setEditingMouse(null);
+      };
+
+      const deleteMouse = async (id) => {
+        const linkedSlices = slices.filter(s => s.mouseId === id);
+        if (linkedSlices.length > 0) {
+          if (!confirm(`This mouse has ${linkedSlices.length} linked slices. Delete anyway?`)) return;
+        } else if (!confirm('Delete this mouse?')) return;
+
+        if (supabase && user && !user.offline) {
+          await supabase.from('mice').delete().eq('id', id);
+        }
+        setMice(mice.filter(m => m.id !== id));
+      };
+
+      const handleSort = (key) => {
+        setSort(prev => ({
+          key,
+          direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+        }));
+      };
+
+      const sortedAndFilteredMice = useMemo(() => {
+        let filtered = mice.filter(m => {
+          if (!searchTerm) return true;
+          const searchLower = searchTerm.toLowerCase();
+          
+          if (searchField === 'all') {
+            return m.id.toLowerCase().includes(searchLower) ||
+              Object.values(m).some(v => String(v).toLowerCase().includes(searchLower));
+          } else {
+            const value = m[searchField];
+            return value && String(value).toLowerCase().includes(searchLower);
+          }
+        });
+
+        return filtered.sort((a, b) => {
+          let aVal, bVal;
+          
+          if (sort.key === 'age') {
+            aVal = a.birthDate ? calculateAge(a.birthDate).days : -1;
+            bVal = b.birthDate ? calculateAge(b.birthDate).days : -1;
+          } else {
+            aVal = a[sort.key] ?? '';
+            bVal = b[sort.key] ?? '';
+          }
+
+          if (aVal < bVal) return sort.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sort.direction === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }, [mice, searchTerm, searchField, sort]);
+
+      return (
+        <div>
+          <div className="flex gap-2 mb-4 flex-wrap">
+            <select
+              value={searchField}
+              onChange={(e) => setSearchField(e.target.value)}
+              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm min-w-[140px]"
+            >
+              {searchFieldOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+            <div className="relative flex-1 min-w-[200px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2">
+                <Icon name="Search" className="w-4 h-4 text-gray-400" />
+              </span>
+              <input
+                type="text"
+                placeholder={searchField === 'all' ? 'Search all fields...' : `Search by ${searchFieldOptions.find(o => o.key === searchField)?.label}...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-purple-500 text-sm"
+              />
+            </div>
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm">
+              <Icon name="Plus" className="w-4 h-4" /> Add Mouse
+            </button>
+          </div>
+
+          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-700/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">ID</th>
+                    <SortableHeader label="Mouse #" sortKey="mouseNumber" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Sex" sortKey="sex" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Genotype" sortKey="genotype" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Age" sortKey="age" currentSort={sort} onSort={handleSort} />
+                    <SortableHeader label="Sacrifice Date" sortKey="sacrificeDate" currentSort={sort} onSort={handleSort} />
+                    <th className="px-3 py-2 text-left font-medium text-gray-300">Slices</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-300">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {sortedAndFilteredMice.length === 0 ? (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                      {mice.length === 0 ? 'No mice yet. Add your first mouse!' : 'No mice match your search.'}
+                    </td></tr>
+                  ) : (
+                    sortedAndFilteredMice.map(mouse => {
+                      const sliceCount = slices.filter(s => s.mouseId === mouse.id).length;
+                      const age = calculateAge(mouse.birthDate, mouse.sacrificeDate);
+                      return (
+                        <tr key={mouse.id} className="hover:bg-gray-700/30">
+                          <td className="px-3 py-2 font-mono text-purple-400 text-xs">{mouse.id}</td>
+                          <td className="px-3 py-2 text-gray-300 font-medium">{mouse.mouseNumber || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.sex || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.genotype || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-300">
+                            {age.days !== null ? (
+                              <span title={`${age.days} days`}>{age.months}m {age.remainingDays}d ({age.days}d)</span>
+                            ) : 'N/A'}
+                          </td>
+                          <td className="px-3 py-2 text-gray-300">{mouse.sacrificeDate ? new Date(mouse.sacrificeDate).toLocaleDateString() : 'N/A'}</td>
+                          <td className="px-3 py-2">
+                            <span className="bg-blue-600/30 text-blue-400 px-2 py-0.5 rounded-full text-xs">{sliceCount}</span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => setEditingMouse(mouse)} className="p-1.5 hover:bg-gray-600 rounded text-blue-400" title="Edit">
+                                <Icon name="Pencil" className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => deleteMouse(mouse.id)} className="p-1.5 hover:bg-gray-600 rounded text-red-400" title="Delete">
+                                <Icon name="Trash2" className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {showAdd && (
+            <Modal title="Add Mouse" onClose={() => setShowAdd(false)}>
+              <DynamicForm schema={mouseSchema} onSubmit={addMouse} onCancel={() => setShowAdd(false)} submitLabel="Add Mouse" />
+            </Modal>
+          )}
+
+          {editingMouse && (
+            <Modal title="Edit Mouse" onClose={() => setEditingMouse(null)}>
+              <DynamicForm schema={mouseSchema} initialData={editingMouse} onSubmit={(data) => updateMouse(editingMouse.id, data)} onCancel={() => setEditingMouse(null)} submitLabel="Save Changes" />
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================
+    // SLICES TAB
+    // ============================================
+    function SlicesTab() {
+      const { mice, slices, setSlices, experiments, sliceSchema, mouseSchema, supabase, user } = useData();
+      const [showAdd, setShowAdd] = useState(false);
+      const [editingSlice, setEditingSlice] = useState(null);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [searchField, setSearchField] = useState('all');
+      const [filterMouseId, setFilterMouseId] = useState('');
+      const [sort, setSort] = useState({ key: 'created_at', direction: 'desc' });
+
+      // Build search field options from schema (including mouse fields)
+      const searchFieldOptions = [
+        { key: 'all', label: 'All Fields' },
+        { key: 'id', label: 'Slice ID' },
+        { key: 'mouse.mouseNumber', label: 'Mouse Number' },
+        { key: 'mouse.sex', label: 'Mouse Sex' },
+        { key: 'mouse.genotype', label: 'Mouse Genotype' },
+        ...sliceSchema.map(f => ({ key: f.key, label: f.label }))
+      ];
+
+      const generateId = () => `S-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
+
+      const addSlice = async (data) => {
+        const newSlice = { id: generateId(), created_at: new Date().toISOString(), ...data };
+        if (supabase && user && !user.offline) {
+          const { data: inserted, error } = await supabase.from('slices').insert({ ...newSlice, user_id: user.id }).select().single();
+          if (!error && inserted) setSlices([inserted, ...slices]);
+        } else {
+          setSlices([newSlice, ...slices]);
+        }
+        setShowAdd(false);
+      };
+
+      const updateSlice = async (id, data) => {
+        if (supabase && user && !user.offline) {
+          await supabase.from('slices').update(data).eq('id', id);
+        }
+        setSlices(slices.map(s => s.id === id ? { ...s, ...data } : s));
+        setEditingSlice(null);
+      };
+
+      const deleteSlice = async (id) => {
+        const linkedExps = experiments.filter(e => e.sliceId === id);
+        if (linkedExps.length > 0) {
+          if (!confirm(`This slice has ${linkedExps.length} linked experiments. Delete anyway?`)) return;
+        } else if (!confirm('Delete this slice?')) return;
+
+        if (supabase && user && !user.offline) {
+          await supabase.from('slices').delete().eq('id', id);
+        }
+        setSlices(slices.filter(s => s.id !== id));
+      };
+
+      const handleSort = (key) => {
+        setSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
+      };
+
+      const sortedAndFilteredSlices = useMemo(() => {
+        let filtered = slices.filter(s => {
+          if (!searchTerm && !filterMouseId) return true;
+          const searchLower = searchTerm.toLowerCase();
+          const mouse = mice.find(m => m.id === s.mouseId);
+          
+          let matchesSearch = true;
+          if (searchTerm) {
+            if (searchField === 'all') {
+              matchesSearch = s.id.toLowerCase().includes(searchLower) ||
+                Object.values(s).some(v => String(v).toLowerCase().includes(searchLower)) ||
+                (mouse && Object.values(mouse).some(v => String(v).toLowerCase().includes(searchLower)));
+            } else if (searchField.startsWith('mouse.')) {
+              const mouseField = searchField.replace('mouse.', '');
+              matchesSearch = mouse && mouse[mouseField] && String(mouse[mouseField]).toLowerCase().includes(searchLower);
+            } else {
+              const value = s[searchField];
+              matchesSearch = value && String(value).toLowerCase().includes(searchLower);
+            }
+          }
+          
+          const matchesMouse = !filterMouseId || s.mouseId === filterMouseId;
+          return matchesSearch && matchesMouse;
+        });
+
+        return filtered.sort((a, b) => {
+          let aVal, bVal;
+          const mouseA = mice.find(m => m.id === a.mouseId);
+          const mouseB = mice.find(m => m.id === b.mouseId);
+
+          switch (sort.key) {
+            case 'mouseNumber':
+              aVal = mouseA?.mouseNumber ?? '';
+              bVal = mouseB?.mouseNumber ?? '';
+              break;
+            case 'sex':
+              aVal = mouseA?.sex ?? '';
+              bVal = mouseB?.sex ?? '';
+              break;
+            case 'genotype':
+              aVal = mouseA?.genotype ?? '';
+              bVal = mouseB?.genotype ?? '';
+              break;
+            case 'age':
+              aVal = mouseA?.birthDate ? calculateAge(mouseA.birthDate).days : -1;
+              bVal = mouseB?.birthDate ? calculateAge(mouseB.birthDate).days : -1;
+              break;
+            case 'sacrificeDate':
+              aVal = mouseA?.sacrificeDate ?? '';
+              bVal = mouseB?.sacrificeDate ?? '';
+              break;
+            default:
+              aVal = a[sort.key] ?? '';
+              bVal = b[sort.key] ?? '';
+          }
+
+          if (aVal < bVal) return sort.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sort.direction === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }, [slices, mice, searchTerm, searchField, filterMouseId, sort]);
+
+      const extendedSchema = [
+        { key: 'mouseId', label: 'Mouse', type: 'reference', referenceTable: 'mice', required: true },
+        ...sliceSchema
+      ];
+
+      return (
+        <div>
+          <div className="flex gap-2 mb-4 flex-wrap">
+            <select
+              value={searchField}
+              onChange={(e) => setSearchField(e.target.value)}
+              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm min-w-[140px]"
+            >
+              {searchFieldOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+            <div className="relative flex-1 min-w-[200px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2">
+                <Icon name="Search" className="w-4 h-4 text-gray-400" />
+              </span>
+              <input
+                type="text"
+                placeholder={searchField === 'all' ? 'Search all fields...' : `Search by ${searchFieldOptions.find(o => o.key === searchField)?.label}...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-purple-500 text-sm"
+              />
+            </div>
+            <select
+              value={filterMouseId}
+              onChange={(e) => setFilterMouseId(e.target.value)}
+              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm"
+            >
+              <option value="">All Mice</option>
+              {mice.map(m => (
+                <option key={m.id} value={m.id}>{m.mouseNumber || m.id}</option>
+              ))}
+            </select>
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm">
+              <Icon name="Plus" className="w-4 h-4" /> Add Slice
+            </button>
+          </div>
+
+          {/* Sort buttons */}
+          <div className="flex gap-2 mb-3 flex-wrap text-xs">
+            <span className="text-gray-500 py-1">Sort by:</span>
+            {[
+              { key: 'mouseNumber', label: 'Mouse #' },
+              { key: 'sex', label: 'Sex' },
+              { key: 'age', label: 'Age' },
+              { key: 'sacrificeDate', label: 'Sacrifice' },
+              { key: 'genotype', label: 'Genotype' },
+              { key: 'cryosectionDate', label: 'Cryosection' },
+              { key: 'created_at', label: 'Added' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handleSort(key)}
+                className={`px-2 py-1 rounded ${sort.key === key ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+              >
+                {label} {sort.key === key && (sort.direction === 'asc' ? '↑' : '↓')}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-3">
+            {sortedAndFilteredSlices.length === 0 ? (
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-500">
+                {slices.length === 0 ? 'No slices yet. Add your first slice!' : 'No slices match your filters.'}
+              </div>
+            ) : (
+              sortedAndFilteredSlices.map(slice => {
+                const mouse = mice.find(m => m.id === slice.mouseId);
+                const expCount = experiments.filter(e => e.sliceId === slice.id).length;
+                const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+                return (
+                  <div key={slice.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="font-mono font-medium text-blue-400">{slice.id}</span>
+                          {mouse && (
+                            <span className="text-xs bg-purple-600/30 text-purple-400 px-2 py-0.5 rounded-full">
+                              {mouse.mouseNumber || mouse.id} ({mouse.sex})
+                            </span>
+                          )}
+                          {expCount > 0 && (
+                            <span className="text-xs bg-green-600/30 text-green-400 px-2 py-0.5 rounded-full">
+                              {expCount} exp
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-sm">
+                          <div><span className="text-gray-500">Region: </span><span className="text-gray-300">{Array.isArray(slice.region) ? slice.region.join(', ') : slice.region || 'N/A'}</span></div>
+                          <div><span className="text-gray-500">Thickness: </span><span className="text-gray-300">{slice.thickness || 'N/A'}μm</span></div>
+                          <div><span className="text-gray-500">Cryosection: </span><span className="text-gray-300">{slice.cryosectionDate ? new Date(slice.cryosectionDate).toLocaleDateString() : 'N/A'}</span></div>
+                          <div><span className="text-gray-500">Embedding: </span><span className="text-gray-300">{slice.embeddingMatrix || 'N/A'}</span></div>
+                        </div>
+                        {mouse && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            Mouse: {mouse.genotype || 'No genotype'} | Age: {age?.months ?? '?'}m {age?.remainingDays !== null ? `${age.remainingDays}d` : ''} | Sacrifice: {mouse.sacrificeDate ? new Date(mouse.sacrificeDate).toLocaleDateString() : 'N/A'}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setEditingSlice(slice)} className="p-2 hover:bg-gray-700 rounded-lg text-blue-400" title="Edit">
+                          <Icon name="Pencil" className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => deleteSlice(slice.id)} className="p-2 hover:bg-gray-700 rounded-lg text-red-400" title="Delete">
+                          <Icon name="Trash2" className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {showAdd && (
+            <Modal title="Add Slice" onClose={() => setShowAdd(false)}>
+              <DynamicForm schema={extendedSchema} onSubmit={addSlice} onCancel={() => setShowAdd(false)} submitLabel="Add Slice" references={{ mice }} />
+            </Modal>
+          )}
+
+          {editingSlice && (
+            <Modal title="Edit Slice" onClose={() => setEditingSlice(null)}>
+              <DynamicForm schema={extendedSchema} initialData={editingSlice} onSubmit={(data) => updateSlice(editingSlice.id, data)} onCancel={() => setEditingSlice(null)} submitLabel="Save Changes" references={{ mice }} />
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================
+    // EXPERIMENTS TAB
+    // ============================================
+    function ExperimentsTab() {
+      const { mice, slices, experiments, setExperiments, experimentSchema, sliceSchema, supabase, user } = useData();
+      const [showAdd, setShowAdd] = useState(false);
+      const [editingExp, setEditingExp] = useState(null);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [searchField, setSearchField] = useState('all');
+      const [filterSliceId, setFilterSliceId] = useState('');
+      const [sort, setSort] = useState({ key: 'created_at', direction: 'desc' });
+
+      // Build search field options from schema (including mouse and slice fields)
+      const searchFieldOptions = [
+        { key: 'all', label: 'All Fields' },
+        { key: 'id', label: 'Experiment ID' },
+        { key: 'slice.id', label: 'Slice ID' },
+        { key: 'mouse.mouseNumber', label: 'Mouse Number' },
+        { key: 'mouse.sex', label: 'Mouse Sex' },
+        { key: 'mouse.genotype', label: 'Mouse Genotype' },
+        ...experimentSchema.map(f => ({ key: f.key, label: f.label }))
+      ];
+
+      const generateId = () => `E-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`.toUpperCase();
+
+      const addExperiment = async (data) => {
+        const newExp = { id: generateId(), created_at: new Date().toISOString(), ...data };
+        if (supabase && user && !user.offline) {
+          const { data: inserted, error } = await supabase.from('experiments').insert({ ...newExp, user_id: user.id }).select().single();
+          if (!error && inserted) setExperiments([inserted, ...experiments]);
+        } else {
+          setExperiments([newExp, ...experiments]);
+        }
+        setShowAdd(false);
+      };
+
+      const updateExperiment = async (id, data) => {
+        if (supabase && user && !user.offline) {
+          await supabase.from('experiments').update(data).eq('id', id);
+        }
+        setExperiments(experiments.map(e => e.id === id ? { ...e, ...data } : e));
+        setEditingExp(null);
+      };
+
+      const deleteExperiment = async (id) => {
+        if (!confirm('Delete this experiment?')) return;
+        if (supabase && user && !user.offline) {
+          await supabase.from('experiments').delete().eq('id', id);
+        }
+        setExperiments(experiments.filter(e => e.id !== id));
+      };
+
+      const handleSort = (key) => {
+        setSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
+      };
+
+      const sortedAndFilteredExperiments = useMemo(() => {
+        let filtered = experiments.filter(e => {
+          if (!searchTerm && !filterSliceId) return true;
+          const searchLower = searchTerm.toLowerCase();
+          const slice = slices.find(s => s.id === e.sliceId);
+          const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
+          
+          let matchesSearch = true;
+          if (searchTerm) {
+            if (searchField === 'all') {
+              matchesSearch = e.id.toLowerCase().includes(searchLower) ||
+                Object.values(e).some(v => String(v).toLowerCase().includes(searchLower)) ||
+                (slice && Object.values(slice).some(v => String(v).toLowerCase().includes(searchLower))) ||
+                (mouse && Object.values(mouse).some(v => String(v).toLowerCase().includes(searchLower)));
+            } else if (searchField.startsWith('mouse.')) {
+              const mouseField = searchField.replace('mouse.', '');
+              matchesSearch = mouse && mouse[mouseField] && String(mouse[mouseField]).toLowerCase().includes(searchLower);
+            } else if (searchField.startsWith('slice.')) {
+              const sliceField = searchField.replace('slice.', '');
+              matchesSearch = slice && slice[sliceField] && String(slice[sliceField]).toLowerCase().includes(searchLower);
+            } else {
+              const value = e[searchField];
+              matchesSearch = value && String(value).toLowerCase().includes(searchLower);
+            }
+          }
+          
+          const matchesSlice = !filterSliceId || e.sliceId === filterSliceId;
+          return matchesSearch && matchesSlice;
+        });
+
+        return filtered.sort((a, b) => {
+          let aVal, bVal;
+          const sliceA = slices.find(s => s.id === a.sliceId);
+          const sliceB = slices.find(s => s.id === b.sliceId);
+          const mouseA = sliceA ? mice.find(m => m.id === sliceA.mouseId) : null;
+          const mouseB = sliceB ? mice.find(m => m.id === sliceB.mouseId) : null;
+
+          switch (sort.key) {
+            case 'mouseNumber':
+              aVal = mouseA?.mouseNumber ?? '';
+              bVal = mouseB?.mouseNumber ?? '';
+              break;
+            case 'sex':
+              aVal = mouseA?.sex ?? '';
+              bVal = mouseB?.sex ?? '';
+              break;
+            case 'genotype':
+              aVal = mouseA?.genotype ?? '';
+              bVal = mouseB?.genotype ?? '';
+              break;
+            case 'age':
+              aVal = mouseA?.birthDate ? calculateAge(mouseA.birthDate).days : -1;
+              bVal = mouseB?.birthDate ? calculateAge(mouseB.birthDate).days : -1;
+              break;
+            case 'sacrificeDate':
+              aVal = mouseA?.sacrificeDate ?? '';
+              bVal = mouseB?.sacrificeDate ?? '';
+              break;
+            default:
+              aVal = a[sort.key] ?? '';
+              bVal = b[sort.key] ?? '';
+          }
+
+          if (aVal < bVal) return sort.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sort.direction === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }, [experiments, slices, mice, searchTerm, searchField, filterSliceId, sort]);
+
+      const extendedSchema = [
+        { key: 'sliceId', label: 'Slice', type: 'reference', referenceTable: 'slices', required: true },
+        ...experimentSchema
+      ];
+
+      return (
+        <div>
+          <div className="flex gap-2 mb-4 flex-wrap">
+            <select
+              value={searchField}
+              onChange={(e) => setSearchField(e.target.value)}
+              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm min-w-[140px]"
+            >
+              {searchFieldOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+            <div className="relative flex-1 min-w-[200px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2">
+                <Icon name="Search" className="w-4 h-4 text-gray-400" />
+              </span>
+              <input
+                type="text"
+                placeholder={searchField === 'all' ? 'Search all fields...' : `Search by ${searchFieldOptions.find(o => o.key === searchField)?.label}...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-purple-500 text-sm"
+              />
+            </div>
+            <select
+              value={filterSliceId}
+              onChange={(e) => setFilterSliceId(e.target.value)}
+              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm"
+            >
+              <option value="">All Slices</option>
+              {slices.map(s => {
+                const mouse = mice.find(m => m.id === s.mouseId);
+                return <option key={s.id} value={s.id}>{s.id} {mouse ? `(${mouse.mouseNumber})` : ''}</option>;
+              })}
+            </select>
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm">
+              <Icon name="Plus" className="w-4 h-4" /> Add Experiment
+            </button>
+          </div>
+
+          {/* Sort buttons */}
+          <div className="flex gap-2 mb-3 flex-wrap text-xs">
+            <span className="text-gray-500 py-1">Sort by:</span>
+            {[
+              { key: 'mouseNumber', label: 'Mouse #' },
+              { key: 'sex', label: 'Sex' },
+              { key: 'age', label: 'Age' },
+              { key: 'experimentDate', label: 'Exp Date' },
+              { key: 'sacrificeDate', label: 'Sacrifice' },
+              { key: 'genotype', label: 'Genotype' },
+              { key: 'created_at', label: 'Added' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handleSort(key)}
+                className={`px-2 py-1 rounded ${sort.key === key ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+              >
+                {label} {sort.key === key && (sort.direction === 'asc' ? '↑' : '↓')}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-3">
+            {sortedAndFilteredExperiments.length === 0 ? (
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-500">
+                {experiments.length === 0 ? 'No experiments yet. Add your first experiment!' : 'No experiments match your filters.'}
+              </div>
+            ) : (
+              sortedAndFilteredExperiments.map(exp => {
+                const slice = slices.find(s => s.id === exp.sliceId);
+                const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
+                const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+                return (
+                  <div key={exp.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="font-mono font-medium text-green-400">{exp.id}</span>
+                          {slice && (
+                            <span className="text-xs bg-blue-600/30 text-blue-400 px-2 py-0.5 rounded-full">
+                              Slice: {slice.id}
+                            </span>
+                          )}
+                          {mouse && (
+                            <span className="text-xs bg-purple-600/30 text-purple-400 px-2 py-0.5 rounded-full">
+                              {mouse.mouseNumber || mouse.id} ({mouse.sex})
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-sm">
+                          <div><span className="text-gray-500">Exp Date: </span><span className="text-gray-300">{exp.experimentDate ? new Date(exp.experimentDate).toLocaleDateString() : 'N/A'}</span></div>
+                          <div><span className="text-gray-500">Operator: </span><span className="text-gray-300">{exp.operator || 'N/A'}</span></div>
+                          <div><span className="text-gray-500">Added: </span><span className="text-gray-300">{new Date(exp.created_at).toLocaleDateString()}</span></div>
+                        </div>
+                        {exp.dataFiles && exp.dataFiles.length > 0 && (
+                          <div className="mt-2 text-sm">
+                            <span className="text-gray-500">Data Files ({exp.dataFiles.length}): </span>
+                            <div className="text-gray-300 text-xs bg-gray-700/50 p-2 rounded mt-1 space-y-0.5">
+                              {exp.dataFiles.map((file, i) => (
+                                <div key={i} className="font-mono truncate" title={file}>{file}</div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {exp.protocol && (
+                          <div className="mt-2 text-sm">
+                            <span className="text-gray-500">Protocol: </span>
+                            <pre className="text-gray-300 whitespace-pre-wrap text-xs bg-gray-700/50 p-2 rounded mt-1">{exp.protocol}</pre>
+                          </div>
+                        )}
+                        {mouse && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            Mouse: {mouse.genotype || 'No genotype'} | Age: {age?.months ?? '?'}m {age?.remainingDays !== null ? `${age.remainingDays}d` : ''} | Sacrifice: {mouse.sacrificeDate ? new Date(mouse.sacrificeDate).toLocaleDateString() : 'N/A'}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setEditingExp(exp)} className="p-2 hover:bg-gray-700 rounded-lg text-blue-400" title="Edit">
+                          <Icon name="Pencil" className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => deleteExperiment(exp.id)} className="p-2 hover:bg-gray-700 rounded-lg text-red-400" title="Delete">
+                          <Icon name="Trash2" className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {showAdd && (
+            <Modal title="Add Experiment" onClose={() => setShowAdd(false)}>
+              <DynamicForm schema={extendedSchema} onSubmit={addExperiment} onCancel={() => setShowAdd(false)} submitLabel="Add Experiment" references={{ slices, mice }} />
+            </Modal>
+          )}
+
+          {editingExp && (
+            <Modal title="Edit Experiment" onClose={() => setEditingExp(null)}>
+              <DynamicForm schema={extendedSchema} initialData={editingExp} onSubmit={(data) => updateExperiment(editingExp.id, data)} onCancel={() => setEditingExp(null)} submitLabel="Save Changes" references={{ slices, mice }} />
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================
+    // LABELS TAB
+    // ============================================
+    function LabelsTab() {
+      const { mice, slices, experiments, mouseSchema, sliceSchema, experimentSchema, labelConfig, setLabelConfig } = useData();
+      const [selectedExperiments, setSelectedExperiments] = useState(new Set());
+      const [showConfig, setShowConfig] = useState(false);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [searchField, setSearchField] = useState('all');
+      const [sort, setSort] = useState({ key: 'created_at', direction: 'desc' });
+
+      // Build search field options
+      const searchFieldOptions = [
+        { key: 'all', label: 'All Fields' },
+        { key: 'id', label: 'Experiment ID' },
+        { key: 'slice.id', label: 'Slice ID' },
+        { key: 'mouse.mouseNumber', label: 'Mouse Number' },
+        { key: 'mouse.sex', label: 'Mouse Sex' },
+        { key: 'mouse.genotype', label: 'Mouse Genotype' },
+        ...sliceSchema.map(f => ({ key: `slice.${f.key}`, label: `Slice: ${f.label}` })),
+        ...experimentSchema.map(f => ({ key: f.key, label: f.label }))
+      ];
+
+      const handleSort = (key) => {
+        setSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
+      };
+
+      const sortedAndFilteredExperiments = useMemo(() => {
+        let filtered = experiments.filter(e => {
+          if (!searchTerm) return true;
+          const searchLower = searchTerm.toLowerCase();
+          const slice = slices.find(s => s.id === e.sliceId);
+          const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
+          
+          if (searchField === 'all') {
+            return e.id.toLowerCase().includes(searchLower) ||
+              (mouse?.mouseNumber || '').toLowerCase().includes(searchLower) ||
+              (mouse?.sex || '').toLowerCase().includes(searchLower) ||
+              (mouse?.genotype || '').toLowerCase().includes(searchLower) ||
+              (slice?.region?.join(' ') || '').toLowerCase().includes(searchLower) ||
+              (e.experimentDate || '').toLowerCase().includes(searchLower) ||
+              Object.values(e).some(v => String(v).toLowerCase().includes(searchLower));
+          } else if (searchField.startsWith('mouse.')) {
+            const mouseField = searchField.replace('mouse.', '');
+            return mouse && mouse[mouseField] && String(mouse[mouseField]).toLowerCase().includes(searchLower);
+          } else if (searchField.startsWith('slice.')) {
+            const sliceField = searchField.replace('slice.', '');
+            const value = slice && slice[sliceField];
+            if (Array.isArray(value)) {
+              return value.join(' ').toLowerCase().includes(searchLower);
+            }
+            return value && String(value).toLowerCase().includes(searchLower);
+          } else {
+            const value = e[searchField];
+            return value && String(value).toLowerCase().includes(searchLower);
+          }
+        });
+
+        return filtered.sort((a, b) => {
+          let aVal, bVal;
+          const sliceA = slices.find(s => s.id === a.sliceId);
+          const sliceB = slices.find(s => s.id === b.sliceId);
+          const mouseA = sliceA ? mice.find(m => m.id === sliceA.mouseId) : null;
+          const mouseB = sliceB ? mice.find(m => m.id === sliceB.mouseId) : null;
+
+          switch (sort.key) {
+            case 'mouseNumber': aVal = mouseA?.mouseNumber ?? ''; bVal = mouseB?.mouseNumber ?? ''; break;
+            case 'sex': aVal = mouseA?.sex ?? ''; bVal = mouseB?.sex ?? ''; break;
+            case 'genotype': aVal = mouseA?.genotype ?? ''; bVal = mouseB?.genotype ?? ''; break;
+            case 'age':
+              aVal = mouseA?.birthDate ? calculateAge(mouseA.birthDate).days : -1;
+              bVal = mouseB?.birthDate ? calculateAge(mouseB.birthDate).days : -1;
+              break;
+            case 'sacrificeDate': aVal = mouseA?.sacrificeDate ?? ''; bVal = mouseB?.sacrificeDate ?? ''; break;
+            default: aVal = a[sort.key] ?? ''; bVal = b[sort.key] ?? '';
+          }
+
+          if (aVal < bVal) return sort.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sort.direction === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }, [experiments, slices, mice, searchTerm, searchField, sort]);
+
+      const toggleSelect = (id) => {
+        const newSelected = new Set(selectedExperiments);
+        if (newSelected.has(id)) newSelected.delete(id);
+        else newSelected.add(id);
+        setSelectedExperiments(newSelected);
+      };
+
+      const selectAll = () => setSelectedExperiments(new Set(sortedAndFilteredExperiments.map(e => e.id)));
+      const deselectAll = () => setSelectedExperiments(new Set());
+
+      const printLabels = () => {
+        const selectedExps = experiments.filter(e => selectedExperiments.has(e.id));
+        if (selectedExps.length === 0) {
+          alert('Please select at least one experiment to print labels.');
+          return;
+        }
+
+        const labelData = selectedExps.map(exp => {
+          const slice = slices.find(s => s.id === exp.sliceId);
+          const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
+          const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+          return { exp, slice, mouse, age };
+        });
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Labels - Batch Print</title>
+            <style>
+              @media print { @page { margin: 3mm; } }
+              * { box-sizing: border-box; }
+              body {
+                font-family: 'Courier New', monospace;
+                font-size: ${labelConfig.fontSize}pt;
+                line-height: 1.15;
+                display: flex;
+                flex-wrap: wrap;
+                align-items: flex-start;
+                align-content: flex-start;
+                gap: 2mm;
+                padding: 2mm;
+                margin: 0;
+              }
+              .label {
+                border: 0.5pt solid #000;
+                padding: 1.5mm;
+                width: ${labelConfig.labelWidth}mm;
+                max-width: ${labelConfig.labelMaxWidth || labelConfig.labelWidth + 10}mm;
+                page-break-inside: avoid;
+                overflow-wrap: break-word;
+                word-wrap: break-word;
+                word-break: break-word;
+                hyphens: auto;
+              }
+              .id { font-weight: bold; font-size: ${labelConfig.fontSize + 0.5}pt; margin-bottom: 0.5mm; }
+              .section { margin-top: 0.8mm; padding-top: 0.8mm; border-top: 0.4pt dashed #666; }
+              .section-title { font-weight: bold; font-size: ${Math.max(labelConfig.fontSize - 1, 4)}pt; color: #555; margin-bottom: 0.3mm; }
+              .row { margin: 0.2mm 0; overflow-wrap: break-word; }
+            </style>
+          </head>
+          <body>
+            ${labelData.map(({ exp, slice, mouse, age }) => `
+              <div class="label">
+                <div class="id">${exp.id}</div>
+                ${labelConfig.showMouseInfo && mouse ? `
+                  <div class="section">
+                    <div class="section-title">MOUSE</div>
+                    ${labelConfig.selectedMouseFields.map(key => {
+                      if (key === 'age' && age) {
+                        return `<div class="row">Age: ${age.months}m ${age.remainingDays}d (${age.days}d)</div>`;
+                      }
+                      const field = mouseSchema.find(f => f.key === key);
+                      const val = mouse[key];
+                      if (!field || !val) return '';
+                      return `<div class="row">${field.label}: ${field.type === 'date' ? new Date(val).toLocaleDateString() : val}</div>`;
+                    }).join('')}
+                  </div>
+                ` : ''}
+                ${labelConfig.showSliceInfo && slice ? `
+                  <div class="section">
+                    <div class="section-title">SLICE</div>
+                    <div class="row">ID: ${slice.id}</div>
+                    ${labelConfig.selectedSliceFields.map(key => {
+                      const field = sliceSchema.find(f => f.key === key);
+                      let val = slice[key];
+                      if (!field || !val) return '';
+                      if (Array.isArray(val)) val = val.join(', ');
+                      if (field.type === 'date') val = new Date(val).toLocaleDateString();
+                      return `<div class="row">${field.label}: ${val}</div>`;
+                    }).join('')}
+                  </div>
+                ` : ''}
+                ${labelConfig.showExperimentInfo ? `
+                  <div class="section">
+                    <div class="section-title">EXPERIMENT</div>
+                    ${labelConfig.selectedExperimentFields.map(key => {
+                      const field = experimentSchema.find(f => f.key === key);
+                      let val = exp[key];
+                      if (!field || !val) return '';
+                      if (field.type === 'date') val = new Date(val).toLocaleDateString();
+                      return `<div class="row">${field.label}: ${val}</div>`;
+                    }).join('')}
+                  </div>
+                ` : ''}
+              </div>
+            `).join('')}
+            <script>window.onload = () => { window.print(); }<\/script>
+          </body>
+          </html>
+        `);
+        printWindow.document.close();
+      };
+
+      return (
+        <div>
+          <div className="flex gap-2 mb-4 flex-wrap items-center">
+            <select
+              value={searchField}
+              onChange={(e) => setSearchField(e.target.value)}
+              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm min-w-[140px]"
+            >
+              {searchFieldOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+            <div className="relative flex-1 min-w-[200px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2">
+                <Icon name="Search" className="w-4 h-4 text-gray-400" />
+              </span>
+              <input
+                type="text"
+                placeholder={searchField === 'all' ? 'Search all fields...' : `Search by ${searchFieldOptions.find(o => o.key === searchField)?.label}...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-purple-500 text-sm"
+              />
+            </div>
+            <button onClick={selectAll} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">Select All</button>
+            <button onClick={deselectAll} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">Deselect</button>
+            <button onClick={() => setShowConfig(true)} className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">
+              <Icon name="Settings" className="w-4 h-4" /> Config
+            </button>
+            <button
+              onClick={printLabels}
+              disabled={selectedExperiments.size === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-sm"
+            >
+              <Icon name="Printer" className="w-4 h-4" /> Print ({selectedExperiments.size})
+            </button>
+          </div>
+
+          {/* Sort buttons */}
+          <div className="flex gap-2 mb-3 flex-wrap text-xs">
+            <span className="text-gray-500 py-1">Sort by:</span>
+            {[
+              { key: 'mouseNumber', label: 'Mouse #' },
+              { key: 'sex', label: 'Sex' },
+              { key: 'age', label: 'Age' },
+              { key: 'experimentDate', label: 'Exp Date' },
+              { key: 'sacrificeDate', label: 'Sacrifice' },
+              { key: 'genotype', label: 'Genotype' },
+              { key: 'created_at', label: 'Added' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handleSort(key)}
+                className={`px-2 py-1 rounded ${sort.key === key ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+              >
+                {label} {sort.key === key && (sort.direction === 'asc' ? '↑' : '↓')}
+              </button>
+            ))}
+          </div>
+
+          <div className="mb-4 text-sm text-gray-400">
+            {selectedExperiments.size} of {sortedAndFilteredExperiments.length} experiments selected
+          </div>
+
+          {/* Label Preview */}
+          <div className="mb-4 p-4 bg-gray-800 rounded-lg border border-gray-700">
+            <h3 className="text-sm font-medium text-gray-400 mb-3">Label Preview (Font: {labelConfig.fontSize}pt, Width: {labelConfig.labelWidth}mm)</h3>
+            <div 
+              className="bg-white text-black p-2 rounded inline-block font-mono overflow-hidden"
+              style={{ fontSize: `${labelConfig.fontSize}pt`, width: `${labelConfig.labelWidth * 2.8}px`, maxWidth: '100%', wordBreak: 'break-word' }}
+            >
+              <div style={{ fontWeight: 'bold', fontSize: `${labelConfig.fontSize + 0.5}pt` }}>E-SAMPLE-ID</div>
+              {labelConfig.showMouseInfo && (
+                <div style={{ marginTop: '3px', paddingTop: '3px', borderTop: '0.5px dashed #999' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: `${Math.max(labelConfig.fontSize - 1, 4)}pt`, color: '#555' }}>MOUSE</div>
+                  <div>Mouse #: M001</div>
+                  <div>Sex: Male</div>
+                </div>
+              )}
+              {labelConfig.showSliceInfo && (
+                <div style={{ marginTop: '3px', paddingTop: '3px', borderTop: '0.5px dashed #999' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: `${Math.max(labelConfig.fontSize - 1, 4)}pt`, color: '#555' }}>SLICE</div>
+                  <div>ID: S-SAMPLE</div>
+                  <div>Region: Hippocampus</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Experiment Selection */}
+          <div className="grid gap-2">
+            {sortedAndFilteredExperiments.length === 0 ? (
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-500">
+                {experiments.length === 0 ? 'No experiments yet. Create experiments first.' : 'No experiments match your search.'}
+              </div>
+            ) : (
+              sortedAndFilteredExperiments.map(exp => {
+                const slice = slices.find(s => s.id === exp.sliceId);
+                const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
+                const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
+                const isSelected = selectedExperiments.has(exp.id);
+                return (
+                  <div
+                    key={exp.id}
+                    onClick={() => toggleSelect(exp.id)}
+                    className={`bg-gray-800 rounded-lg border p-3 cursor-pointer transition-colors ${
+                      isSelected ? 'border-purple-500 bg-purple-600/10' : 'border-gray-700 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                        isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-600'
+                      }`}>
+                        {isSelected && <Icon name="Check" className="w-3 h-3 text-white" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap text-sm">
+                          <span className="font-mono text-green-400">{exp.id}</span>
+                          <span className="text-gray-500">|</span>
+                          {mouse && <span className="text-purple-400">{mouse.mouseNumber} ({mouse.sex})</span>}
+                          {mouse?.genotype && <span className="text-gray-400">| {mouse.genotype}</span>}
+                          {age && <span className="text-gray-500">| {age.months}m{age.remainingDays}d</span>}
+                          {exp.experimentDate && <span className="text-gray-500">| {new Date(exp.experimentDate).toLocaleDateString()}</span>}
+                          {slice && <span className="text-blue-400 text-xs">| {slice.id}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {showConfig && (
+            <Modal title="Label Configuration" onClose={() => setShowConfig(false)} large>
+              <LabelConfigPanel config={labelConfig} setConfig={setLabelConfig} onClose={() => setShowConfig(false)} />
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================
+    // LABEL CONFIG PANEL
+    // ============================================
+    function LabelConfigPanel({ config, setConfig, onClose }) {
+      const { mouseSchema, sliceSchema, experimentSchema } = useData();
+      const [localConfig, setLocalConfig] = useState(config);
+
+      const toggleField = (category, key) => {
+        const fieldName = `selected${category}Fields`;
+        const current = localConfig[fieldName] || [];
+        if (current.includes(key)) {
+          setLocalConfig({ ...localConfig, [fieldName]: current.filter(k => k !== key) });
+        } else {
+          setLocalConfig({ ...localConfig, [fieldName]: [...current, key] });
+        }
+      };
+
+      const save = () => { setConfig(localConfig); onClose(); };
+
+      // Add "age" as a virtual field for mouse
+      const mouseFieldsWithAge = [...mouseSchema, { key: 'age', label: 'Age (calculated)', type: 'virtual' }];
+
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Font Size: {localConfig.fontSize}pt</label>
+              <input
+                type="number"
+                min="4"
+                max="16"
+                step="0.5"
+                value={localConfig.fontSize}
+                onChange={(e) => setLocalConfig({ ...localConfig, fontSize: parseFloat(e.target.value) || 7 })}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg"
+              />
+              <input
+                type="range"
+                min="4"
+                max="16"
+                step="0.5"
+                value={localConfig.fontSize}
+                onChange={(e) => setLocalConfig({ ...localConfig, fontSize: parseFloat(e.target.value) })}
+                className="w-full mt-1"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Label Width: {localConfig.labelWidth}mm</label>
+              <input
+                type="number"
+                min="20"
+                max="80"
+                step="0.5"
+                value={localConfig.labelWidth}
+                onChange={(e) => setLocalConfig({ ...localConfig, labelWidth: parseFloat(e.target.value) || 38 })}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg"
+              />
+              <input
+                type="range"
+                min="20"
+                max="80"
+                step="0.5"
+                value={localConfig.labelWidth}
+                onChange={(e) => setLocalConfig({ ...localConfig, labelWidth: parseFloat(e.target.value) })}
+                className="w-full mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="bg-gray-700/50 rounded-lg p-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" checked={localConfig.showMouseInfo} onChange={(e) => setLocalConfig({ ...localConfig, showMouseInfo: e.target.checked })} className="rounded" />
+                Show Mouse Info
+              </label>
+              {localConfig.showMouseInfo && (
+                <div className="ml-6 mt-2 flex flex-wrap gap-2">
+                  {mouseFieldsWithAge.map(field => (
+                    <label key={field.key} className="flex items-center gap-1 text-xs bg-gray-600 px-2 py-1 rounded cursor-pointer hover:bg-gray-500">
+                      <input type="checkbox" checked={localConfig.selectedMouseFields?.includes(field.key)} onChange={() => toggleField('Mouse', field.key)} className="rounded" />
+                      {field.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-gray-700/50 rounded-lg p-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" checked={localConfig.showSliceInfo} onChange={(e) => setLocalConfig({ ...localConfig, showSliceInfo: e.target.checked })} className="rounded" />
+                Show Slice Info
+              </label>
+              {localConfig.showSliceInfo && (
+                <div className="ml-6 mt-2 flex flex-wrap gap-2">
+                  {sliceSchema.map(field => (
+                    <label key={field.key} className="flex items-center gap-1 text-xs bg-gray-600 px-2 py-1 rounded cursor-pointer hover:bg-gray-500">
+                      <input type="checkbox" checked={localConfig.selectedSliceFields?.includes(field.key)} onChange={() => toggleField('Slice', field.key)} className="rounded" />
+                      {field.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-gray-700/50 rounded-lg p-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" checked={localConfig.showExperimentInfo} onChange={(e) => setLocalConfig({ ...localConfig, showExperimentInfo: e.target.checked })} className="rounded" />
+                Show Experiment Info
+              </label>
+              {localConfig.showExperimentInfo && (
+                <div className="ml-6 mt-2 flex flex-wrap gap-2">
+                  {experimentSchema.map(field => (
+                    <label key={field.key} className="flex items-center gap-1 text-xs bg-gray-600 px-2 py-1 rounded cursor-pointer hover:bg-gray-500">
+                      <input type="checkbox" checked={localConfig.selectedExperimentFields?.includes(field.key)} onChange={() => toggleField('Experiment', field.key)} className="rounded" />
+                      {field.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <button onClick={onClose} className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">Cancel</button>
+            <button onClick={save} className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg">Save Config</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================
+    // SETTINGS PANEL
+    // ============================================
+    function SettingsPanel({ onClose }) {
+      const { mouseSchema, setMouseSchema, sliceSchema, setSliceSchema, experimentSchema, setExperimentSchema } = useData();
+      const [activeSchemaTab, setActiveSchemaTab] = useState('mouse');
+
+      const schemas = {
+        mouse: { schema: mouseSchema, setSchema: setMouseSchema, label: 'Mouse' },
+        slice: { schema: sliceSchema, setSchema: setSliceSchema, label: 'Slice' },
+        experiment: { schema: experimentSchema, setSchema: setExperimentSchema, label: 'Experiment' },
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="flex gap-2 border-b border-gray-700 pb-2">
+            {Object.entries(schemas).map(([key, { label }]) => (
+              <button
+                key={key}
+                onClick={() => setActiveSchemaTab(key)}
+                className={`px-3 py-1.5 rounded-lg text-sm ${activeSchemaTab === key ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+              >
+                {label} Fields
+              </button>
+            ))}
+          </div>
+          <SchemaEditor schema={schemas[activeSchemaTab].schema} setSchema={schemas[activeSchemaTab].setSchema} />
+          <button onClick={onClose} className="w-full py-2 bg-purple-600 hover:bg-purple-700 rounded-lg">Done</button>
+        </div>
+      );
+    }
+
+    // ============================================
+    // SCHEMA EDITOR
+    // ============================================
+    function SchemaEditor({ schema, setSchema }) {
+      const [editingField, setEditingField] = useState(null);
+      const fieldTypes = [
+        { value: 'text', label: 'Text' },
+        { value: 'number', label: 'Number' },
+        { value: 'date', label: 'Date' },
+        { value: 'select', label: 'Dropdown' },
+        { value: 'multicheck', label: 'Checkboxes' },
+        { value: 'textarea', label: 'Long Text' },
+        { value: 'multitext', label: 'Multiple Paths/Lines' },
+      ];
+
+      const addField = () => {
+        const newField = { key: `field_${Date.now()}`, label: 'New Field', type: 'text', required: false };
+        setSchema([...schema, newField]);
+        setEditingField(newField.key);
+      };
+
+      const updateField = (key, updates) => setSchema(schema.map(f => f.key === key ? { ...f, ...updates } : f));
+      const deleteField = (key) => { if (confirm('Delete this field?')) setSchema(schema.filter(f => f.key !== key)); };
+      const moveField = (index, direction) => {
+        const newSchema = [...schema];
+        const newIndex = index + direction;
+        if (newIndex >= 0 && newIndex < schema.length) {
+          [newSchema[index], newSchema[newIndex]] = [newSchema[newIndex], newSchema[index]];
+          setSchema(newSchema);
+        }
+      };
+
+      return (
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {schema.map((field, index) => (
+            <div key={field.key} className="bg-gray-700/50 rounded-lg p-3">
+              {editingField === field.key ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Field Key</label>
+                      <input type="text" value={field.key} onChange={(e) => updateField(field.key, { key: e.target.value.replace(/\s/g, '_') })} className="w-full px-2 py-1 bg-gray-600 border border-gray-500 rounded text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Display Label</label>
+                      <input type="text" value={field.label} onChange={(e) => updateField(field.key, { label: e.target.value })} className="w-full px-2 py-1 bg-gray-600 border border-gray-500 rounded text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Type</label>
+                      <select value={field.type} onChange={(e) => updateField(field.key, { type: e.target.value })} className="w-full px-2 py-1 bg-gray-600 border border-gray-500 rounded text-sm">
+                        {fieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-end">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={field.required} onChange={(e) => updateField(field.key, { required: e.target.checked })} /> Required
+                      </label>
+                    </div>
+                  </div>
+                  {(field.type === 'select' || field.type === 'multicheck') && (
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Options (comma-separated)</label>
+                      <input type="text" value={(field.options || []).join(', ')} onChange={(e) => updateField(field.key, { options: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full px-2 py-1 bg-gray-600 border border-gray-500 rounded text-sm" placeholder="Option 1, Option 2" />
+                    </div>
+                  )}
+                  {field.type === 'number' && (
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Default Value</label>
+                      <input type="number" value={field.default || ''} onChange={(e) => updateField(field.key, { default: e.target.value ? Number(e.target.value) : undefined })} className="w-full px-2 py-1 bg-gray-600 border border-gray-500 rounded text-sm" />
+                    </div>
+                  )}
+                  <button onClick={() => setEditingField(null)} className="text-xs text-purple-400 hover:text-purple-300">Done editing</button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-medium">{field.label}</span>
+                    <span className="text-gray-500 text-sm ml-2">({field.type})</span>
+                    {field.required && <span className="text-red-400 text-xs ml-2">*</span>}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => moveField(index, -1)} className="p-1 hover:bg-gray-600 rounded" disabled={index === 0}><Icon name="ChevronUp" className="w-4 h-4" /></button>
+                    <button onClick={() => moveField(index, 1)} className="p-1 hover:bg-gray-600 rounded" disabled={index === schema.length - 1}><Icon name="ChevronDown" className="w-4 h-4" /></button>
+                    <button onClick={() => setEditingField(field.key)} className="p-1 hover:bg-gray-600 rounded text-blue-400"><Icon name="Pencil" className="w-4 h-4" /></button>
+                    <button onClick={() => deleteField(field.key)} className="p-1 hover:bg-gray-600 rounded text-red-400"><Icon name="Trash2" className="w-4 h-4" /></button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          <button onClick={addField} className="w-full py-2 border-2 border-dashed border-gray-600 hover:border-gray-500 rounded-lg text-gray-400 hover:text-white flex items-center justify-center gap-2">
+            <Icon name="Plus" className="w-4 h-4" /> Add Field
+          </button>
+        </div>
+      );
+    }
+
+    // ============================================
+    // BACKUP PANEL
+    // ============================================
+    function BackupPanel({ onClose }) {
+      const data = useData();
+      const fileInputRef = useRef(null);
+
+      const exportData = () => {
+        const backup = {
+          version: '2.1',
+          exportDate: new Date().toISOString(),
+          data: { mice: data.mice, slices: data.slices, experiments: data.experiments },
+          schemas: { mouseSchema: data.mouseSchema, sliceSchema: data.sliceSchema, experimentSchema: data.experimentSchema },
+          settings: { labelConfig: data.labelConfig }
+        };
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lab-manager-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      const importData = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const backup = JSON.parse(event.target.result);
+            if (!backup.version || !backup.data) throw new Error('Invalid backup file format');
+
+            const merge = confirm('Merge with existing data?\n\nOK = Merge (add new items)\nCancel = Replace all');
+
+            if (merge) {
+              const existingMouseIds = new Set(data.mice.map(m => m.id));
+              const existingSliceIds = new Set(data.slices.map(s => s.id));
+              const existingExpIds = new Set(data.experiments.map(e => e.id));
+              data.setMice([...data.mice, ...(backup.data.mice || []).filter(m => !existingMouseIds.has(m.id))]);
+              data.setSlices([...data.slices, ...(backup.data.slices || []).filter(s => !existingSliceIds.has(s.id))]);
+              data.setExperiments([...data.experiments, ...(backup.data.experiments || []).filter(e => !existingExpIds.has(e.id))]);
+              alert('Data merged successfully!');
+            } else {
+              data.setMice(backup.data.mice || []);
+              data.setSlices(backup.data.slices || []);
+              data.setExperiments(backup.data.experiments || []);
+              if (backup.schemas) {
+                if (backup.schemas.mouseSchema) data.setMouseSchema(backup.schemas.mouseSchema);
+                if (backup.schemas.sliceSchema) data.setSliceSchema(backup.schemas.sliceSchema);
+                if (backup.schemas.experimentSchema) data.setExperimentSchema(backup.schemas.experimentSchema);
+              }
+              if (backup.settings?.labelConfig) data.setLabelConfig(backup.settings.labelConfig);
+              alert('Data restored successfully!');
+            }
+          } catch (err) {
+            alert('Error importing backup: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-gray-700/50 rounded-lg p-4">
+            <h3 className="font-medium mb-2">Current Data</h3>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div><div className="text-2xl font-bold text-purple-400">{data.mice.length}</div><div className="text-xs text-gray-400">Mice</div></div>
+              <div><div className="text-2xl font-bold text-blue-400">{data.slices.length}</div><div className="text-xs text-gray-400">Slices</div></div>
+              <div><div className="text-2xl font-bold text-green-400">{data.experiments.length}</div><div className="text-xs text-gray-400">Experiments</div></div>
+            </div>
+          </div>
+          <button onClick={exportData} className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium flex items-center justify-center gap-2">
+            <Icon name="Download" className="w-5 h-5" /> Export Full Backup
+          </button>
+          <button onClick={() => fileInputRef.current?.click()} className="w-full py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium flex items-center justify-center gap-2">
+            <Icon name="Upload" className="w-5 h-5" /> Import Backup
+          </button>
+          <input ref={fileInputRef} type="file" accept=".json" onChange={importData} className="hidden" />
+          <p className="text-xs text-gray-500 text-center">Backup files work identically online and offline.</p>
+          <button onClick={onClose} className="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">Close</button>
+        </div>
+      );
+    }
+
+    // ============================================
+    // DYNAMIC FORM
+    // ============================================
+    function DynamicForm({ schema, initialData = {}, onSubmit, onCancel, submitLabel = 'Save', references = {} }) {
+      const [form, setForm] = useState(() => {
+        const initial = {};
+        schema.forEach(field => {
+          if (field.type === 'multicheck' || field.type === 'multitext') {
+            initial[field.key] = initialData[field.key] ?? [];
+          } else {
+            initial[field.key] = initialData[field.key] ?? field.default ?? '';
+          }
+        });
+        return initial;
+      });
+
+      const handleSubmit = (e) => { e.preventDefault(); onSubmit(form); };
+      const updateField = (key, value) => setForm({ ...form, [key]: value });
+
+      const toggleMulticheck = (key, option) => {
+        const current = form[key] || [];
+        if (current.includes(option)) {
+          updateField(key, current.filter(o => o !== option));
+        } else {
+          updateField(key, [...current, option]);
+        }
+      };
+
+      // Functions for multitext (array of strings)
+      const addMultitextItem = (key) => {
+        const current = form[key] || [];
+        updateField(key, [...current, '']);
+      };
+      const updateMultitextItem = (key, index, value) => {
+        const current = [...(form[key] || [])];
+        current[index] = value;
+        updateField(key, current);
+      };
+      const removeMultitextItem = (key, index) => {
+        const current = form[key] || [];
+        updateField(key, current.filter((_, i) => i !== index));
+      };
+
+      return (
+        <form onSubmit={handleSubmit} className="space-y-4 max-h-[60vh] overflow-y-auto">
+          {schema.map(field => (
+            <div key={field.key}>
+              <label className="block text-sm text-gray-400 mb-1">
+                {field.label}{field.required && <span className="text-red-400 ml-1">*</span>}
+              </label>
+              {field.type === 'reference' ? (
+                <select
+                  value={form[field.key] || ''}
+                  onChange={(e) => updateField(field.key, e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-purple-500"
+                  required={field.required}
+                >
+                  <option value="">Select {field.label}...</option>
+                  {(references[field.referenceTable] || []).map(item => {
+                    const mouse = field.referenceTable === 'slices' && references.mice 
+                      ? references.mice.find(m => m.id === item.mouseId) 
+                      : null;
+                    return (
+                      <option key={item.id} value={item.id}>
+                        {item.mouseNumber || item.id} {item.region ? `- ${Array.isArray(item.region) ? item.region.join('/') : item.region}` : ''} {mouse ? `(${mouse.mouseNumber})` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : field.type === 'multicheck' ? (
+                <div className="flex flex-wrap gap-3 mt-1">
+                  {(field.options || []).map(opt => (
+                    <label key={opt} className="flex items-center gap-2 cursor-pointer bg-gray-700 px-3 py-2 rounded-lg hover:bg-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={(form[field.key] || []).includes(opt)}
+                        onChange={() => toggleMulticheck(field.key, opt)}
+                        className="rounded"
+                      />
+                      {opt}
+                    </label>
+                  ))}
+                </div>
+              ) : field.type === 'multitext' ? (
+                <div className="space-y-2">
+                  {(form[field.key] || []).map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => updateMultitextItem(field.key, index, e.target.value)}
+                        placeholder={`Path ${index + 1}...`}
+                        className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeMultitextItem(field.key, index)}
+                        className="px-3 py-2 bg-red-600/30 hover:bg-red-600/50 text-red-400 rounded-lg"
+                        title="Remove"
+                      >
+                        <Icon name="X" className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => addMultitextItem(field.key)}
+                    className="w-full py-2 border-2 border-dashed border-gray-600 hover:border-gray-500 rounded-lg text-gray-400 hover:text-white text-sm flex items-center justify-center gap-2"
+                  >
+                    <Icon name="Plus" className="w-4 h-4" /> Add Path
+                  </button>
+                </div>
+              ) : field.type === 'select' ? (
+                <select value={form[field.key] || ''} onChange={(e) => updateField(field.key, e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg" required={field.required}>
+                  <option value="">Select...</option>
+                  {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              ) : field.type === 'textarea' ? (
+                <textarea value={form[field.key] || ''} onChange={(e) => updateField(field.key, e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg resize-none" rows={3} required={field.required} />
+              ) : (
+                <input
+                  type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+                  value={form[field.key] || ''}
+                  onChange={(e) => updateField(field.key, field.type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg"
+                  required={field.required}
+                />
+              )}
+            </div>
+          ))}
+          <div className="flex gap-2 pt-2 sticky bottom-0 bg-gray-800 pb-2">
+            <button type="button" onClick={onCancel} className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">Cancel</button>
+            <button type="submit" className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg">{submitLabel}</button>
+          </div>
+        </form>
+      );
+    }
+
+    // ============================================
+    // MODAL
+    // ============================================
+    function Modal({ title, children, onClose, large = false }) {
+      return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className={`bg-gray-800 rounded-xl border border-gray-700 w-full ${large ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-auto`}>
+            <div className="flex items-center justify-between p-4 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
+              <h2 className="text-lg font-semibold">{title}</h2>
+              <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded"><Icon name="X" className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4">{children}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================
+    // RENDER
+    // ============================================
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
