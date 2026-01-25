@@ -166,6 +166,28 @@
       return path.split('.').reduce((acc, part) => acc && acc[part], obj);
     }
 
+    // Abbreviation helpers for display
+    function abbrevSex(sex) {
+      if (!sex) return '?';
+      if (sex === 'Male' || sex === 'M') return 'M';
+      if (sex === 'Female' || sex === 'F') return 'F';
+      return sex;
+    }
+
+    function abbrevRegion(region) {
+      if (!region) return '?';
+      if (Array.isArray(region)) {
+        return region.map(r => {
+          if (r === 'Hippocampus' || r === 'H') return 'H';
+          if (r === 'Cortex' || r === 'C') return 'C';
+          return r;
+        }).join('/');
+      }
+      if (region === 'Hippocampus') return 'H';
+      if (region === 'Cortex') return 'C';
+      return region;
+    }
+
     // ============================================
     // DATA CONTEXT
     // ============================================
@@ -212,6 +234,14 @@
         }
       }, [user, dataLoaded]);
 
+      // Helper to merge schemas - keeps saved order but adds any new default fields
+      const mergeSchemas = (defaultSchema, savedSchema) => {
+        const savedKeys = new Set(savedSchema.map(f => f.key));
+        const newFields = defaultSchema.filter(f => !savedKeys.has(f.key));
+        // Put new fields at the beginning so they're visible
+        return [...newFields, ...savedSchema];
+      };
+
       const loadData = async () => {
         if (supabase && user && !user.offline) {
           try {
@@ -233,9 +263,19 @@
             if (slicesRes.data && !slicesRes.error) setSlices(slicesRes.data);
             if (expRes.data && !expRes.error) setExperiments(expRes.data);
             if (schemaRes.data && !schemaRes.error) {
-              if (schemaRes.data.mouse_schema) setMouseSchema(schemaRes.data.mouse_schema);
-              if (schemaRes.data.slice_schema) setSliceSchema(schemaRes.data.slice_schema);
-              if (schemaRes.data.experiment_schema) setExperimentSchema(schemaRes.data.experiment_schema);
+              // Merge with defaults to ensure new fields are present
+              if (schemaRes.data.mouse_schema) {
+                const merged = mergeSchemas(DEFAULT_MOUSE_SCHEMA, schemaRes.data.mouse_schema);
+                setMouseSchema(merged);
+              }
+              if (schemaRes.data.slice_schema) {
+                const merged = mergeSchemas(DEFAULT_SLICE_SCHEMA, schemaRes.data.slice_schema);
+                setSliceSchema(merged);
+              }
+              if (schemaRes.data.experiment_schema) {
+                const merged = mergeSchemas(DEFAULT_EXPERIMENT_SCHEMA, schemaRes.data.experiment_schema);
+                setExperimentSchema(merged);
+              }
               if (schemaRes.data.label_config) setLabelConfig(schemaRes.data.label_config);
             }
           } catch (err) {
@@ -261,9 +301,23 @@
         if (savedMice) setMice(JSON.parse(savedMice));
         if (savedSlices) setSlices(JSON.parse(savedSlices));
         if (savedExperiments) setExperiments(JSON.parse(savedExperiments));
-        if (savedMouseSchema) setMouseSchema(JSON.parse(savedMouseSchema));
-        if (savedSliceSchema) setSliceSchema(JSON.parse(savedSliceSchema));
-        if (savedExperimentSchema) setExperimentSchema(JSON.parse(savedExperimentSchema));
+        
+        // Merge schemas with defaults to ensure new fields are present
+        if (savedMouseSchema) {
+          const saved = JSON.parse(savedMouseSchema);
+          const merged = mergeSchemas(DEFAULT_MOUSE_SCHEMA, saved);
+          setMouseSchema(merged);
+        }
+        if (savedSliceSchema) {
+          const saved = JSON.parse(savedSliceSchema);
+          const merged = mergeSchemas(DEFAULT_SLICE_SCHEMA, saved);
+          setSliceSchema(merged);
+        }
+        if (savedExperimentSchema) {
+          const saved = JSON.parse(savedExperimentSchema);
+          const merged = mergeSchemas(DEFAULT_EXPERIMENT_SCHEMA, saved);
+          setExperimentSchema(merged);
+        }
         if (savedLabelConfig) setLabelConfig(JSON.parse(savedLabelConfig));
       };
 
@@ -1897,7 +1951,10 @@
           const slice = slices.find(s => s.id === exp.sliceId);
           const mouse = slice ? mice.find(m => m.id === slice.mouseId) : null;
           const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
-          return { exp, slice, mouse, age };
+          // Pre-compute abbreviations
+          const sexAbbrev = abbrevSex(mouse?.sex);
+          const regionAbbrev = abbrevRegion(slice?.region);
+          return { exp, slice, mouse, age, sexAbbrev, regionAbbrev };
         });
 
         const printWindow = window.open('', '_blank');
@@ -1938,15 +1995,15 @@
             </style>
           </head>
           <body>
-            ${labelData.map(({ exp, slice, mouse, age }) => `
+            ${labelData.map(({ exp, slice, mouse, age, sexAbbrev, regionAbbrev }) => `
               <div class="label">
                 <div class="id">${exp.id}</div>
                 ${labelConfig.showMouseInfo && mouse ? `
-                  <div class="row">${mouse.mouseNumber || '?'}/${mouse.sex || '?'}/${age?.months ?? '?'}/${mouse.genotype || '?'}</div>
+                  <div class="row">${mouse.mouseNumber || '?'}/${sexAbbrev}/${age?.months ?? '?'}/${mouse.genotype || '?'}</div>
                 ` : ''}
                 ${labelConfig.showSliceInfo && slice ? `
                   <div class="row">${slice.id}</div>
-                  <div class="row">${Array.isArray(slice.region) ? slice.region.join('/') : (slice.region || '?')}/${slice.thickness || '?'}μm${slice.cryosectionDate ? '/' + new Date(slice.cryosectionDate).toLocaleDateString() : ''}</div>
+                  <div class="row">${regionAbbrev}/${slice.thickness || '?'}μm${slice.cryosectionDate ? '/' + new Date(slice.cryosectionDate).toLocaleDateString() : ''}</div>
                 ` : ''}
                 ${labelConfig.showExperimentInfo ? `
                   <div class="exp-section">
@@ -2087,11 +2144,9 @@
                         <div className="flex items-center gap-2 flex-wrap text-sm">
                           <span className="font-mono text-green-400">{exp.id}</span>
                           <span className="text-gray-500">|</span>
-                          {mouse && <span className="text-purple-400">{mouse.mouseNumber} ({mouse.sex})</span>}
-                          {mouse?.genotype && <span className="text-gray-400">| {mouse.genotype}</span>}
-                          {age && <span className="text-gray-500">| {age.months}m{age.remainingDays}d</span>}
+                          {mouse && <span className="text-purple-400">{mouse.mouseNumber}/{abbrevSex(mouse.sex)}/{age?.months ?? '?'}/{mouse.genotype || '?'}</span>}
+                          {slice && <span className="text-blue-400">| {abbrevRegion(slice.region)}/{slice.thickness}μm</span>}
                           {exp.experimentDate && <span className="text-gray-500">| {new Date(exp.experimentDate).toLocaleDateString()}</span>}
-                          {slice && <span className="text-blue-400 text-xs">| {slice.id}</span>}
                         </div>
                       </div>
                     </div>
@@ -2473,7 +2528,22 @@
         return initial;
       });
 
-      const handleSubmit = (e) => { e.preventDefault(); onSubmit(form); };
+      const handleSubmit = (e) => { 
+        e.preventDefault(); 
+        // Clean up the form data - convert empty number fields to null
+        const cleanedForm = {};
+        schema.forEach(field => {
+          const value = form[field.key];
+          if (field.type === 'number') {
+            cleanedForm[field.key] = value === '' || value === null || value === undefined ? null : Number(value);
+          } else if (field.type === 'multicheck' || field.type === 'multitext') {
+            cleanedForm[field.key] = value || [];
+          } else {
+            cleanedForm[field.key] = value === '' ? null : value;
+          }
+        });
+        onSubmit(cleanedForm); 
+      };
       const updateField = (key, value) => setForm({ ...form, [key]: value });
 
       const toggleMulticheck = (key, option) => {
