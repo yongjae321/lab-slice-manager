@@ -30,8 +30,8 @@
     // CONFIGURATION - Now stored in localStorage!
     // You can still hardcode here, or enter via Settings
     // ============================================
-    const HARDCODED_SUPABASE_URL = ''; // Optional: e.g., 'https://xxxx.supabase.co'
-    const HARDCODED_SUPABASE_ANON_KEY = ''; // Optional: Your anon/public key
+    const HARDCODED_SUPABASE_URL = 'https://dcvaenscfybcfalgmrgx.supabase.co'; // Optional: e.g., 'https://xxxx.supabase.co'
+    const HARDCODED_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdmFlbnNjZnliY2ZhbGdtcmd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyODk4NjUsImV4cCI6MjA4NDg2NTg2NX0.FVAm8I_ycP531RHalj3wAXjPm-A15AtNDSqRk1Mfu9E'; // Optional: Your anon/public key
     
     // Get config from localStorage or use hardcoded values
     const getSupabaseConfig = () => {
@@ -200,7 +200,7 @@
 
           return () => subscription.unsubscribe();
         } else {
-          setUser({ offline: true });
+          // Don't auto-set offline mode - show auth screen so user can configure Supabase
           setAuthLoading(false);
         }
       }, []);
@@ -585,6 +585,12 @@
         if (supabase && !user.offline) {
           await supabase.auth.signOut();
         }
+        // Clear user to go back to auth screen
+        window.location.reload();
+      };
+      
+      const handleReconfigure = () => {
+        // Clear offline mode and reload to show auth screen
         window.location.reload();
       };
 
@@ -609,6 +615,11 @@
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {user.offline && (
+                  <button onClick={handleReconfigure} className="flex items-center gap-1 px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 text-green-400 rounded-lg text-sm" title="Configure online sync">
+                    <Icon name="Cloud" className="w-4 h-4" /> Go Online
+                  </button>
+                )}
                 <button onClick={() => setShowBackup(true)} className="p-2 hover:bg-gray-700 rounded-lg" title="Backup & Restore">
                   <Icon name="Database" className="w-5 h-5" />
                 </button>
