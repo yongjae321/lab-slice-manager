@@ -76,7 +76,7 @@
     // ============================================
     const DEFAULT_MOUSE_SCHEMA = [
       { key: 'mouseNumber', label: 'Mouse Number', type: 'text', required: true },
-      { key: 'sex', label: 'Sex', type: 'select', options: ['M', 'F'], required: true },
+      { key: 'sex', label: 'Sex', type: 'select', options: ['M', 'F'], required: false },
       { key: 'genotype', label: 'Genotype', type: 'text', required: false },
       { key: 'labeling', label: 'Labeling', type: 'text', required: false },
       { key: 'birthDate', label: 'Birth Date', type: 'date', required: false },
@@ -2716,8 +2716,8 @@
                 </div>
               ) : field.type === 'select' ? (
                 <select value={form[field.key] || ''} onChange={(e) => updateField(field.key, e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg" required={field.required}>
-                  <option value="">Select...</option>
-                  {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  <option value="">{field.required ? 'Select...' : '(Not specified)'}</option>
+                  {(field.options || []).filter(opt => opt !== '').map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
               ) : field.type === 'textarea' ? (
                 <textarea value={form[field.key] || ''} onChange={(e) => updateField(field.key, e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg resize-none" rows={3} required={field.required} />
