@@ -339,9 +339,11 @@ Mouse A ──► Slice 1 ──────► Experiment Y (single slice exper
 
 #### Adding Slices
 1. Go to **Slices** tab
-2. Click on a mouse button to add a slice for that mouse
-3. Fill in region, thickness, etc.
-4. Click **Add**
+2. At the top, you'll see a sortable mice table with columns: Mouse#, Sex, Genotype, Age, Slices count
+3. Use the sort buttons (Mouse#, Sex, Age, Slices) to organize the list
+4. Click the **+** button in the "Add" column for the desired mouse
+5. Fill in region, thickness, etc.
+6. Click **Add**
 
 #### Creating Experiments (Two Ways)
 
@@ -515,7 +517,7 @@ Option B: Partially import from backup:
 | Task | How To |
 |------|--------|
 | Add a mouse | Mice tab → Add Mouse |
-| Add a slice | Slices tab → Click mouse button |
+| Add a slice | Slices tab → Find mouse in table → Click + button |
 | Create experiment | Experiments tab → New Experiment |
 | Add slice to experiment | Slices tab → Flask icon, OR Experiments tab → Expand → + button |
 | Edit slice treatment | Experiments tab → Expand → Pencil icon on slice |

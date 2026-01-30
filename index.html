@@ -474,7 +474,7 @@
                       <td className="px-3 py-2 text-gray-300">{age.months !== null ? `${age.months}m${age.remainingDays ? ` ${age.remainingDays}d` : ''}` : 'N/A'}</td>
                       <td className="px-3 py-2 text-gray-300">{slices.filter(s => s.mouseId === mouse.id).length}</td>
                       <td className="px-3 py-2 text-right">
-                        <button onClick={() => setEditingMouse(mouse)} className="p-1 hover:bg-gray-600 rounded"><Icon name="Pencil" className="w-4 h-4" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setEditingMouse({ ...mouse, _ts: Date.now() }); }} className="p-1 hover:bg-gray-600 rounded"><Icon name="Pencil" className="w-4 h-4" /></button>
                         <button onClick={() => deleteMouse(mouse.id)} className="p-1 hover:bg-red-600/30 rounded text-red-400"><Icon name="Trash2" className="w-4 h-4" /></button>
                       </td>
                     </tr>
@@ -484,7 +484,7 @@
             </table>
           </div>
           {showAdd && <Modal title="Add Mouse" onClose={() => setShowAdd(false)}><DynamicForm schema={mouseSchema} onSubmit={addMouse} onCancel={() => setShowAdd(false)} submitLabel="Add" /></Modal>}
-          {editingMouse && <Modal title="Edit Mouse" onClose={() => setEditingMouse(null)}><DynamicForm schema={mouseSchema} initialData={editingMouse} onSubmit={updateMouse} onCancel={() => setEditingMouse(null)} submitLabel="Save" /></Modal>}
+          {editingMouse && <Modal key={editingMouse._ts} title="Edit Mouse" onClose={() => setEditingMouse(null)}><DynamicForm schema={mouseSchema} initialData={editingMouse} onSubmit={updateMouse} onCancel={() => setEditingMouse(null)} submitLabel="Save" /></Modal>}
         </div>
       );
     }
@@ -495,8 +495,22 @@
       const [addingSliceForMouse, setAddingSliceForMouse] = useState(null);
       const [editingSlice, setEditingSlice] = useState(null);
       const [searchTerm, setSearchTerm] = useState('');
-      const [sort, setSort] = useState({ key: 'created_at', direction: 'desc' });
+      const [sliceSort, setSliceSort] = useState({ key: 'created_at', direction: 'desc' });
+      const [mouseSort, setMouseSort] = useState({ key: 'mouseNumber', direction: 'asc' });
       const [addingExpForSlice, setAddingExpForSlice] = useState(null);
+
+      const handleMouseSort = (key) => setMouseSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
+      const handleSliceSort = (key) => setSliceSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
+
+      const sortedMice = useMemo(() => {
+        return [...mice].sort((a, b) => {
+          let aVal, bVal;
+          if (mouseSort.key === 'age') { const ageA = getMouseAge(a); const ageB = getMouseAge(b); aVal = ageA.months ?? -1; bVal = ageB.months ?? -1; }
+          else if (mouseSort.key === 'sliceCount') { aVal = slices.filter(s => s.mouseId === a.id).length; bVal = slices.filter(s => s.mouseId === b.id).length; }
+          else { aVal = a[mouseSort.key] ?? ''; bVal = b[mouseSort.key] ?? ''; }
+          return mouseSort.direction === 'asc' ? (aVal < bVal ? -1 : 1) : (aVal > bVal ? -1 : 1);
+        });
+      }, [mice, slices, mouseSort]);
 
       const sortedSlices = useMemo(() => {
         let filtered = slices.filter(s => {
@@ -506,10 +520,10 @@
           return s.id.toLowerCase().includes(searchLower) || (mouse?.mouseNumber || '').toLowerCase().includes(searchLower) || (s.region?.join(' ') || '').toLowerCase().includes(searchLower);
         });
         return filtered.sort((a, b) => {
-          let aVal = a[sort.key] ?? '', bVal = b[sort.key] ?? '';
-          return sort.direction === 'asc' ? (aVal < bVal ? -1 : 1) : (aVal > bVal ? -1 : 1);
+          let aVal = a[sliceSort.key] ?? '', bVal = b[sliceSort.key] ?? '';
+          return sliceSort.direction === 'asc' ? (aVal < bVal ? -1 : 1) : (aVal > bVal ? -1 : 1);
         });
-      }, [slices, mice, searchTerm, sort]);
+      }, [slices, mice, searchTerm, sliceSort]);
 
       const addSlice = async (data) => {
         const newSlice = { id: generateId('S'), mouseId: addingSliceForMouse.id, ...data, created_at: new Date().toISOString() };
@@ -531,15 +545,54 @@
 
       return (
         <div>
-          <div className="flex gap-2 mb-4 flex-wrap">
-            <input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 min-w-[200px] px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" />
-          </div>
-          <div className="mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
-            <div className="text-sm text-gray-400 mb-2">Add slice for:</div>
-            <div className="flex flex-wrap gap-2">
-              {mice.map(m => <button key={m.id} onClick={() => { setAddingSliceForMouse(m); setShowAdd(true); }} className="px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/50 rounded-lg text-sm">{m.mouseNumber} ({abbrevSex(m.sex)})</button>)}
-              {mice.length === 0 && <span className="text-gray-500 text-sm">Add a mouse first</span>}
+          {/* Mice Table - Add slice for mouse */}
+          <div className="mb-6">
+            <div className="text-sm text-gray-400 mb-2">Add slice for mouse:</div>
+            <div className="flex gap-2 mb-2 text-xs flex-wrap">
+              {[{ key: 'mouseNumber', label: 'Mouse#' }, { key: 'sex', label: 'Sex' }, { key: 'age', label: 'Age' }, { key: 'sliceCount', label: 'Slices' }].map(({ key, label }) => (
+                <button key={key} onClick={() => handleMouseSort(key)} className={`px-2 py-1 rounded ${mouseSort.key === key ? 'bg-purple-600' : 'bg-gray-700'}`}>{label} {mouseSort.key === key && (mouseSort.direction === 'asc' ? '↑' : '↓')}</button>
+              ))}
             </div>
+            <div className="overflow-x-auto bg-gray-800 rounded-lg border border-gray-700">
+              <table className="w-full">
+                <thead className="bg-gray-900/50"><tr>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400">Mouse#</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400">Sex</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400">Genotype</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400">Age</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-400">Slices</th>
+                  <th className="px-3 py-2 text-right text-xs text-gray-400">Add</th>
+                </tr></thead>
+                <tbody className="divide-y divide-gray-700">
+                  {sortedMice.length === 0 ? <tr><td colSpan="6" className="py-4 text-center text-gray-500">No mice - add mice first</td></tr> : sortedMice.map(mouse => {
+                    const age = getMouseAge(mouse);
+                    const sliceCount = slices.filter(s => s.mouseId === mouse.id).length;
+                    return (
+                      <tr key={mouse.id} className="hover:bg-gray-700/50">
+                        <td className="px-3 py-2 font-medium">{mouse.mouseNumber || 'N/A'}</td>
+                        <td className="px-3 py-2 text-gray-300">{abbrevSex(mouse.sex)}</td>
+                        <td className="px-3 py-2 text-gray-300">{mouse.genotype || 'N/A'}</td>
+                        <td className="px-3 py-2 text-gray-300">{age.months !== null ? `${age.months}m` : 'N/A'}</td>
+                        <td className="px-3 py-2 text-gray-300">{sliceCount}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button onClick={() => { setAddingSliceForMouse(mouse); setShowAdd(true); }} className="p-1.5 hover:bg-purple-600/30 rounded text-purple-400"><Icon name="Plus" className="w-4 h-4" /></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Slices List */}
+          <div className="flex gap-2 mb-4 flex-wrap">
+            <input type="text" placeholder="Search slices..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 min-w-[200px] px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" />
+          </div>
+          <div className="flex gap-2 mb-3 text-xs flex-wrap">
+            {[{ key: 'id', label: 'ID' }, { key: 'created_at', label: 'Added' }].map(({ key, label }) => (
+              <button key={key} onClick={() => handleSliceSort(key)} className={`px-2 py-1 rounded ${sliceSort.key === key ? 'bg-purple-600' : 'bg-gray-700'}`}>{label} {sliceSort.key === key && (sliceSort.direction === 'asc' ? '↑' : '↓')}</button>
+            ))}
           </div>
           <div className="grid gap-2">
             {sortedSlices.length === 0 ? <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-500">No slices</div> : sortedSlices.map(slice => {
@@ -557,8 +610,8 @@
                     {expCount > 0 && <span className="text-orange-400 text-xs">({expCount} exp)</span>}
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => setAddingExpForSlice(slice)} className="p-1.5 hover:bg-purple-600/30 rounded text-purple-400" title="Add to Experiment"><Icon name="FlaskConical" className="w-4 h-4" /></button>
-                    <button onClick={() => setEditingSlice(slice)} className="p-1.5 hover:bg-gray-600 rounded"><Icon name="Pencil" className="w-4 h-4" /></button>
+                    <button onClick={() => setAddingExpForSlice({ ...slice, _ts: Date.now() })} className="p-1.5 hover:bg-purple-600/30 rounded text-purple-400" title="Add to Experiment"><Icon name="FlaskConical" className="w-4 h-4" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setEditingSlice({ ...slice, _ts: Date.now() }); }} className="p-1.5 hover:bg-gray-600 rounded"><Icon name="Pencil" className="w-4 h-4" /></button>
                     <button onClick={() => deleteSlice(slice.id)} className="p-1.5 hover:bg-red-600/30 rounded text-red-400"><Icon name="Trash2" className="w-4 h-4" /></button>
                   </div>
                 </div>
@@ -569,8 +622,8 @@
             <div className="mb-4 p-3 bg-purple-600/20 rounded-lg border border-purple-500/30">For: {addingSliceForMouse.mouseNumber} ({abbrevSex(addingSliceForMouse.sex)})</div>
             <DynamicForm schema={sliceSchema} onSubmit={addSlice} onCancel={() => { setShowAdd(false); setAddingSliceForMouse(null); }} submitLabel="Add" />
           </Modal>}
-          {editingSlice && <Modal title="Edit Slice" onClose={() => setEditingSlice(null)}><DynamicForm schema={sliceSchema} initialData={editingSlice} onSubmit={updateSlice} onCancel={() => setEditingSlice(null)} submitLabel="Save" /></Modal>}
-          {addingExpForSlice && <AddSliceToExpModal slice={addingExpForSlice} onClose={() => setAddingExpForSlice(null)} />}
+          {editingSlice && <Modal key={editingSlice._ts} title="Edit Slice" onClose={() => setEditingSlice(null)}><DynamicForm schema={sliceSchema} initialData={editingSlice} onSubmit={updateSlice} onCancel={() => setEditingSlice(null)} submitLabel="Save" /></Modal>}
+          {addingExpForSlice && <AddSliceToExpModal key={addingExpForSlice._ts} slice={addingExpForSlice} onClose={() => setAddingExpForSlice(null)} />}
         </div>
       );
     }
@@ -717,8 +770,8 @@
                       <span className="text-orange-400">| {expSlices.length} slice(s)</span>
                     </div>
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => setAddingSliceToExp(exp)} className="p-1.5 hover:bg-purple-600/30 rounded text-purple-400"><Icon name="Plus" className="w-4 h-4" /></button>
-                      <button onClick={() => setEditingExp(exp)} className="p-1.5 hover:bg-gray-600 rounded"><Icon name="Pencil" className="w-4 h-4" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setAddingSliceToExp({ ...exp, _ts: Date.now() }); }} className="p-1.5 hover:bg-purple-600/30 rounded text-purple-400"><Icon name="Plus" className="w-4 h-4" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingExp({ ...exp, _ts: Date.now() }); }} className="p-1.5 hover:bg-gray-600 rounded"><Icon name="Pencil" className="w-4 h-4" /></button>
                       <button onClick={() => deleteExp(exp.id)} className="p-1.5 hover:bg-red-600/30 rounded text-red-400"><Icon name="Trash2" className="w-4 h-4" /></button>
                     </div>
                   </div>
@@ -739,9 +792,9 @@
                                   <span className="text-green-400 ml-2">{abbrevRegion(slice?.region)}/{slice?.thickness}μm</span>
                                   {treatment && <div className="text-yellow-400 text-xs mt-1">→ {treatment}</div>}
                                 </div>
-                                <div className="flex gap-1">
-                                  <button onClick={() => setEditingExpSlice({ id, treatment })} className="p-1 hover:bg-gray-600 rounded"><Icon name="Pencil" className="w-3 h-3" /></button>
-                                  <button onClick={() => removeSliceLink(id)} className="p-1 hover:bg-red-600/30 rounded text-red-400"><Icon name="X" className="w-3 h-3" /></button>
+                                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <button onClick={(e) => { e.stopPropagation(); setEditingExpSlice({ id, treatment, _ts: Date.now() }); }} className="p-1 hover:bg-gray-600 rounded"><Icon name="Pencil" className="w-3 h-3" /></button>
+                                  <button onClick={(e) => { e.stopPropagation(); removeSliceLink(id); }} className="p-1 hover:bg-red-600/30 rounded text-red-400"><Icon name="X" className="w-3 h-3" /></button>
                                 </div>
                               </div>
                             );
@@ -755,9 +808,9 @@
             })}
           </div>
           {showAdd && <Modal title="New Experiment" onClose={() => setShowAdd(false)} large><DynamicForm schema={experimentSchema} onSubmit={addExp} onCancel={() => setShowAdd(false)} submitLabel="Create" /></Modal>}
-          {editingExp && <Modal title="Edit Experiment" onClose={() => setEditingExp(null)} large><DynamicForm schema={experimentSchema} initialData={editingExp} onSubmit={updateExp} onCancel={() => setEditingExp(null)} submitLabel="Save" /></Modal>}
-          {addingSliceToExp && <AddSliceToExpFromExpTab experiment={addingSliceToExp} onClose={() => setAddingSliceToExp(null)} />}
-          {editingExpSlice && <EditExpSliceModal expSlice={editingExpSlice} onClose={() => setEditingExpSlice(null)} />}
+          {editingExp && <Modal key={editingExp._ts} title="Edit Experiment" onClose={() => setEditingExp(null)} large><DynamicForm schema={experimentSchema} initialData={editingExp} onSubmit={updateExp} onCancel={() => setEditingExp(null)} submitLabel="Save" /></Modal>}
+          {addingSliceToExp && <AddSliceToExpFromExpTab key={addingSliceToExp._ts} experiment={addingSliceToExp} onClose={() => setAddingSliceToExp(null)} />}
+          {editingExpSlice && <EditExpSliceModal key={editingExpSlice._ts} expSlice={editingExpSlice} onClose={() => setEditingExpSlice(null)} />}
         </div>
       );
     }
@@ -784,7 +837,7 @@
           </div>
           {availableSlices.length === 0 ? <div className="text-gray-500 text-center py-4">No slices available</div> : (
             <div className="space-y-3">
-              <select value={selectedSlice || ''} onChange={(e) => setSelectedSlice(e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg">
+              <select value={selectedSlice || ''} onChange={(e) => setSelectedSlice(e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
                 <option value="">Select slice...</option>
                 {availableSlices.map(slice => {
                   const mouse = mice.find(m => m.id === slice.mouseId);
@@ -792,7 +845,7 @@
                 })}
               </select>
               <div><label className="block text-sm text-gray-400 mb-1">Treatment</label>
-                <textarea value={treatment} onChange={(e) => setTreatment(e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg" rows={3} />
+                <textarea value={treatment} onChange={(e) => setTreatment(e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" rows={3} />
               </div>
               <div className="flex gap-2">
                 <button onClick={onClose} className="flex-1 py-2 bg-gray-700 rounded-lg">Cancel</button>
@@ -807,6 +860,17 @@
     function EditExpSliceModal({ expSlice, onClose }) {
       const { experimentSlices, setExperimentSlices, user, supabase } = useData();
       const [treatment, setTreatment] = useState(expSlice.treatment || '');
+      const textareaRef = useRef(null);
+
+      useEffect(() => {
+        // Force focus after render
+        const timer = setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+        }, 50);
+        return () => clearTimeout(timer);
+      }, []);
 
       const save = async () => {
         setExperimentSlices(experimentSlices.map(es => es.id === expSlice.id ? { ...es, treatment } : es));
@@ -816,7 +880,16 @@
 
       return (
         <Modal title="Edit Treatment" onClose={onClose}>
-          <textarea value={treatment} onChange={(e) => setTreatment(e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg" rows={4} />
+          <textarea 
+            ref={textareaRef}
+            value={treatment} 
+            onChange={(e) => setTreatment(e.target.value)} 
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); textareaRef.current?.focus(); }}
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" 
+            rows={4}
+            autoFocus
+          />
           <div className="flex gap-2 mt-4">
             <button onClick={onClose} className="flex-1 py-2 bg-gray-700 rounded-lg">Cancel</button>
             <button onClick={save} className="flex-1 py-2 bg-purple-600 rounded-lg">Save</button>
@@ -1274,8 +1347,8 @@
 
     function Modal({ title, children, onClose, large = false }) {
       return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className={`bg-gray-800 rounded-xl border border-gray-700 w-full ${large ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-auto`}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={onClose} onMouseDown={(e) => e.target === e.currentTarget && e.stopPropagation()}>
+          <div className={`bg-gray-800 rounded-xl border border-gray-700 w-full ${large ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-auto`} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
               <h2 className="text-lg font-semibold">{title}</h2>
               <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded"><Icon name="X" className="w-5 h-5" /></button>

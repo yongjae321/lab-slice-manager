@@ -26,6 +26,10 @@ All notable changes to Lab Slice Manager.
 - **Adjustable Label Padding**: 0-3mm padding (default 1mm) for compact labels
 - **Tighter Label Spacing**: Reduced line-height and margins for maximum space efficiency
 - **Optional Experiment ID**: Can print experiment ID at the top of labels (off by default)
+- **Slices Tab Redesign**: Mice now shown as sortable table (Mouse#, Sex, Genotype, Age, Slices count) instead of buttons
+
+### Fixed
+- Edit modals now reliably accept input focus (fixed event propagation issue that occasionally prevented clicking in text fields)
 
 ### Added
 - `experiment_slices` junction table linking experiments to slices
