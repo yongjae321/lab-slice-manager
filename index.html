@@ -260,11 +260,24 @@
       }, [user, dataLoaded]);
 
       // Helper to merge schemas - keeps saved order but adds any new default fields
+      // Also syncs the 'required' property from defaults (fixes issue where old saved schemas had required: true)
       const mergeSchemas = (defaultSchema, savedSchema) => {
+        const defaultByKey = {};
+        defaultSchema.forEach(f => { defaultByKey[f.key] = f; });
+        
         const savedKeys = new Set(savedSchema.map(f => f.key));
         const newFields = defaultSchema.filter(f => !savedKeys.has(f.key));
+        
+        // Update saved fields with required property from defaults
+        const updatedSaved = savedSchema.map(f => {
+          if (defaultByKey[f.key]) {
+            return { ...f, required: defaultByKey[f.key].required };
+          }
+          return f;
+        });
+        
         // Put new fields at the beginning so they're visible
-        return [...newFields, ...savedSchema];
+        return [...newFields, ...updatedSaved];
       };
 
       const loadData = async () => {
