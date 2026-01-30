@@ -2,31 +2,34 @@
 
 *A story of building a full-stack web app in a single HTML file*
 
+**Version 3.0 | January 2025**
+
 ---
 
 ## Table of Contents
 1. [The Big Picture](#the-big-picture)
 2. [Architecture Overview](#architecture-overview)
 3. [The Technology Stack](#the-technology-stack)
-4. [How the Pieces Connect](#how-the-pieces-connect)
+4. [Data Model: Many-to-Many](#data-model-many-to-many)
 5. [The Database Layer](#the-database-layer)
 6. [Authentication: Magic Links](#authentication-magic-links)
 7. [The Offline-First Philosophy](#the-offline-first-philosophy)
-8. [Dynamic Schemas: The Secret Sauce](#dynamic-schemas-the-secret-sauce)
-9. [Bugs We Encountered (And How We Squashed Them)](#bugs-we-encountered-and-how-we-squashed-them)
-10. [Lessons Learned](#lessons-learned)
-11. [Best Practices Discovered](#best-practices-discovered)
-12. [What I'd Do Differently](#what-id-do-differently)
+8. [Dynamic Schemas](#dynamic-schemas)
+9. [Label Printing System](#label-printing-system)
+10. [Bugs We Encountered](#bugs-we-encountered)
+11. [Lessons Learned](#lessons-learned)
 
 ---
 
 ## The Big Picture
 
-Imagine you're a neuroscience researcher. You have mice, you slice their brains, you run experiments on those slices, and you need to print tiny labels to track everything. You could use Excel, but then you'd have no sync between your office computer and your wet lab. You could build a complex enterprise app, but who has time for that?
+Imagine you're a neuroscience researcher. You have mice, you slice their brains, you run experiments on those slices, and you need to print tiny labels to track everything. 
 
-This project is the sweet spot: a **Progressive Web App (PWA)** that runs entirely from a single HTML file, syncs to the cloud, works offline, and can even print labels for your tissue samples.
+**The v2.x limitation**: Each experiment belonged to exactly one slice. But real research often involves comparing slices from different mice in the same experiment.
 
-**The core insight**: You don't always need a complex build system, a separate backend, or a team of developers. Sometimes, a well-crafted single file can do the job.
+**The v3.0 solution**: A many-to-many relationship where experiments can contain multiple slices, and each slice can have its own treatment protocol within that experiment.
+
+This project is a **Progressive Web App (PWA)** that runs entirely from a single HTML file, syncs to the cloud, works offline, and prints labels for your tissue samples.
 
 ---
 
@@ -36,7 +39,7 @@ This project is the sweet spot: a **Progressive Web App (PWA)** that runs entire
 ┌─────────────────────────────────────────────────────────────────┐
 │                        SINGLE HTML FILE                         │
 │  ┌───────────────┬───────────────┬───────────────────────────┐  │
-│  │    React      │   Tailwind    │      Application Code     │  │
+│  │    React 18   │   Tailwind    │      Application Code     │  │
 │  │   (via CDN)   │   (via CDN)   │   (Components, Logic)     │  │
 │  └───────────────┴───────────────┴───────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
@@ -47,7 +50,7 @@ This project is the sweet spot: a **Progressive Web App (PWA)** that runs entire
 │                         SUPABASE                                │
 │  ┌───────────────┬───────────────┬───────────────────────────┐  │
 │  │     Auth      │   PostgreSQL  │   Row Level Security      │  │
-│  │ (Magic Links) │   Database    │      (RLS Policies)       │  │
+│  │ (Magic Links) │   (6 Tables)  │      (RLS Policies)       │  │
 │  └───────────────┴───────────────┴───────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -55,52 +58,32 @@ This project is the sweet spot: a **Progressive Web App (PWA)** that runs entire
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      LOCAL STORAGE                              │
-│         (Offline data, cached schemas, config)                  │
+│         (Offline data, cached schemas, Supabase config)         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### The "No Build Step" Philosophy
 
-Most modern web apps require you to:
-1. Install Node.js
-2. Run `npm install` (and wait... and wait...)
-3. Configure Webpack/Vite/whatever
-4. Run a dev server
-5. Build for production
-6. Deploy the built files
+We load React and Babel directly from CDNs, and the browser compiles our JSX on the fly. This means:
 
-**We skip all of that.**
+- No `npm install`
+- No Webpack/Vite configuration
+- No build step
+- Just open the file and it works
 
-Instead, we load React and Babel directly from CDNs, and the browser compiles our JSX on the fly. Is this slower? Yes, by maybe 100ms on page load. Does it matter for a lab management app used by a few researchers? Not at all.
-
-**Trade-off accepted**: Slightly slower initial load for massively simpler development and deployment.
+**Trade-off**: Slightly slower initial load (~100ms) for massively simpler development and deployment.
 
 ---
 
 ## The Technology Stack
 
-### Frontend: React Without the Ceremony
+### Frontend: React 18 via CDN
 
 ```html
-<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 ```
-
-These three lines give us:
-- **React 18** with hooks, context, and all the modern goodies
-- **ReactDOM** for rendering
-- **Babel** for transforming JSX in the browser
-
-We write normal React code:
-```jsx
-function MiceTab() {
-  const [mice, setMice] = useState([]);
-  // ... just regular React
-}
-```
-
-And Babel transforms it to browser-compatible JavaScript automatically.
 
 ### Styling: Tailwind CSS
 
@@ -108,248 +91,282 @@ And Babel transforms it to browser-compatible JavaScript automatically.
 <script src="https://cdn.tailwindcss.com"></script>
 ```
 
-One line. No configuration files. No PurgeCSS setup. Just utility classes:
+One line. No configuration. Utility-first styling.
+
+### Backend: Supabase
+
+- **PostgreSQL** database with proper relational structure
+- **Magic Link authentication** (no passwords)
+- **Row Level Security** for multi-user data isolation
+- **Free tier** sufficient for lab use
+
+### Icons: Lucide
 
 ```jsx
-<button className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg">
-  Add Mouse
-</button>
+const Icon = ({ name, className }) => {
+  const iconRef = useRef(null);
+  useEffect(() => {
+    if (iconRef.current && lucide.icons[name]) {
+      iconRef.current.innerHTML = '';
+      iconRef.current.appendChild(lucide.createElement(lucide.icons[name]));
+    }
+  }, [name]);
+  return <span ref={iconRef} className={className} />;
+};
 ```
-
-**Why Tailwind?** Because naming CSS classes is one of the hardest problems in computer science (only half joking). With Tailwind, you describe what you want (`px-4` = padding-x of 1rem) instead of inventing names like `.button-primary-large-rounded`.
-
-### Backend: Supabase (Backend-as-a-Service)
-
-Supabase is like Firebase, but built on PostgreSQL instead of NoSQL. This matters because:
-
-1. **Real SQL**: You can write actual queries, joins, and use proper data types
-2. **Row Level Security**: Security rules live in the database, not scattered across your code
-3. **Open Source**: If Supabase disappears tomorrow, you can self-host
-
-We use three Supabase features:
-- **Authentication**: Magic link emails (no passwords to manage)
-- **Database**: PostgreSQL tables for mice, slices, experiments
-- **Realtime**: (Not currently used, but available for future multi-user sync)
-
-### Icons: Lucide React
-
-```jsx
-function Icon({ name, ...props }) {
-  const LucideIcon = lucide[name];
-  return LucideIcon ? <LucideIcon {...props} /> : null;
-}
-```
-
-We load the entire Lucide icon library and pick icons by name. It's not the most efficient approach (tree-shaking would be better), but it's simple and the library is small enough that it doesn't matter.
 
 ---
 
-## How the Pieces Connect
+## Data Model: Many-to-Many
 
-### The Data Flow
+### The v2.x Problem
 
 ```
-User Action (click "Add Mouse")
-        │
-        ▼
-React Component State Updates
-        │
-        ▼
-Optimistic UI Update (shows immediately)
-        │
-        ▼
-Async Supabase Call (saves to cloud)
-        │
-        ├── Success: Cloud and local in sync ✓
-        │
-        └── Failure: Show error, data still in local state
-                     (saved to localStorage as backup)
+Mouse → Slice → Experiment
+         1:1 relationship
 ```
 
-This is called **optimistic UI**. We assume the save will succeed and update the UI immediately. If it fails, we tell the user but don't lose their data.
+This meant:
+- Each experiment could only study one slice
+- Comparison studies required creating separate experiments
+- No way to track which slices were compared together
 
-### The Context Provider Pattern
+### The v3.0 Solution
 
-All shared state lives in a `DataProvider` component:
-
-```jsx
-function DataProvider({ children }) {
-  const [mice, setMice] = useState([]);
-  const [slices, setSlices] = useState([]);
-  const [experiments, setExperiments] = useState([]);
-  const [mouseSchema, setMouseSchema] = useState(DEFAULT_MOUSE_SCHEMA);
-  // ... more state
-
-  return (
-    <DataContext.Provider value={{
-      mice, setMice,
-      slices, setSlices,
-      // ... everything
-    }}>
-      {children}
-    </DataContext.Provider>
-  );
-}
+```
+┌──────────┐      ┌──────────┐
+│   MICE   │      │  SLICES  │
+│          │──1:N─│          │
+│ M-XXXX   │      │ S-XXXX   │
+└──────────┘      └────┬─────┘
+                       │
+                       │ N:M (via junction table)
+                       │
+┌──────────────────────┼──────────────────────┐
+│                      │                      │
+│         ┌────────────┴────────────┐         │
+│         │   EXPERIMENT_SLICES     │         │
+│         │     (junction table)    │         │
+│         │                         │         │
+│         │ - experimentId (FK)     │         │
+│         │ - sliceId (FK)          │         │
+│         │ - treatment (per-slice) │         │
+│         │ - notes (per-slice)     │         │
+│         └────────────┬────────────┘         │
+│                      │                      │
+└──────────────────────┼──────────────────────┘
+                       │
+                ┌──────┴──────┐
+                │ EXPERIMENTS │
+                │             │
+                │ E-XXXX      │
+                │ (independent)│
+                └─────────────┘
 ```
 
-Any component can then access this data:
+### Key Design Decisions
 
-```jsx
-function MiceTab() {
-  const { mice, setMice, mouseSchema } = useData();
-  // Now we have access to everything
-}
-```
+**1. Experiments are independent entities**
+- Not subordinate to any single slice
+- Have their own fields: title, purpose, protocol, operator, results
+- Can exist without any slices (empty experiment)
 
-**Why Context instead of Redux/Zustand/etc?** Because our state is simple. We have three main arrays and some configuration. Context handles this perfectly without adding another library.
+**2. Per-slice treatment in junction table**
+- Each slice in an experiment has its own `treatment` field
+- This is where you record: "10μM Drug A", "Control", "Vehicle only", etc.
+- Enables comparison studies within a single experiment
+
+**3. Cascade deletes with protection**
+- Deleting an experiment removes all `experiment_slices` links
+- Deleting a slice requires first removing it from all experiments
+- Deleting a mouse requires first deleting all its slices
 
 ---
 
 ## The Database Layer
 
-### Schema Design
-
-```
-┌──────────────┐       ┌──────────────┐       ┌──────────────┐
-│    MICE      │       │   SLICES     │       │ EXPERIMENTS  │
-├──────────────┤       ├──────────────┤       ├──────────────┤
-│ id (PK)      │──┐    │ id (PK)      │──┐    │ id (PK)      │
-│ user_id (FK) │  │    │ user_id (FK) │  │    │ user_id (FK) │
-│ mouseNumber  │  │    │ mouseId (FK) │──┘    │ sliceId (FK) │──┘
-│ sex          │  │    │ region       │       │ title        │
-│ genotype     │  │    │ thickness    │       │ experimentDt │
-│ birthDate    │  │    │ cryosectDt   │       │ protocol     │
-│ sacrificeDt  │  │    │ ...          │       │ ...          │
-│ ageMonths    │  │    └──────────────┘       └──────────────┘
-│ ...          │  │
-└──────────────┘  │
-                  │
-        "One mouse has many slices"
-        "One slice has many experiments"
-```
-
-This is a classic **one-to-many** relationship chain. A mouse can have multiple brain slices, and each slice can have multiple experiments performed on it.
-
-### Row Level Security (RLS): The Unsung Hero
-
-Here's the magic that makes public API keys safe:
+### Tables Overview
 
 ```sql
--- Users can only see their own mice
+-- Core data tables
+mice                 -- Animal subjects
+slices               -- Brain tissue sections
+experiments          -- Research activities
+experiment_slices    -- Junction: many-to-many link with per-slice data
+
+-- System tables
+user_settings        -- Schemas, label config
+db_version           -- Migration tracking
+```
+
+### Schema Details
+
+#### mice
+```sql
+CREATE TABLE mice (
+    id TEXT PRIMARY KEY,           -- e.g., "M-LXK8-F3A2"
+    user_id UUID,                  -- Owner (for RLS)
+    "mouseNumber" TEXT,            -- Lab identifier
+    sex TEXT,                      -- M/F
+    genotype TEXT,                 -- e.g., "WT", "APP/PS1"
+    labeling TEXT,                 -- e.g., "GFP+", "tdTomato"
+    "birthDate" DATE,
+    "sacrificeDate" DATE,
+    "ageMonths" INTEGER,           -- Manual age if no birthDate
+    notes TEXT,
+    created_at TIMESTAMPTZ
+);
+```
+
+#### slices
+```sql
+CREATE TABLE slices (
+    id TEXT PRIMARY KEY,           -- e.g., "S-ABK2-N7P4"
+    user_id UUID,
+    "mouseId" TEXT REFERENCES mice(id) ON DELETE CASCADE,
+    region JSONB,                  -- ["H", "C"] for multi-select
+    thickness INTEGER,             -- μm
+    "cryosectionDate" DATE,
+    "embeddingMatrix" TEXT,        -- TFM, OCT
+    "sliceNumber" INTEGER,
+    quality TEXT,
+    "storageLocation" TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ
+);
+```
+
+#### experiments
+```sql
+CREATE TABLE experiments (
+    id TEXT PRIMARY KEY,           -- e.g., "E-QWE4-R5TY"
+    user_id UUID,
+    title TEXT,                    -- "Drug A Dose Response"
+    "experimentDate" DATE,
+    purpose TEXT,                  -- Multi-line
+    protocol TEXT,                 -- Experiment-level protocol
+    operator TEXT,                 -- Who ran the experiment
+    results TEXT,
+    "dataFiles" JSONB,             -- Array of file paths
+    notes TEXT,
+    created_at TIMESTAMPTZ
+);
+```
+
+#### experiment_slices (Junction Table)
+```sql
+CREATE TABLE experiment_slices (
+    id TEXT PRIMARY KEY,           -- e.g., "ES-MNB3-V8CX"
+    user_id UUID,
+    "experimentId" TEXT REFERENCES experiments(id) ON DELETE CASCADE,
+    "sliceId" TEXT REFERENCES slices(id) ON DELETE CASCADE,
+    treatment TEXT,                -- Per-slice: "10μM Drug A"
+    notes TEXT,                    -- Per-slice notes
+    created_at TIMESTAMPTZ,
+    UNIQUE("experimentId", "sliceId")  -- No duplicates
+);
+```
+
+### Row Level Security (RLS)
+
+Every table has RLS enabled with policies like:
+
+```sql
 CREATE POLICY "Users can view own mice" ON mice
     FOR SELECT USING (auth.uid() = user_id);
 
--- Users can only insert mice with their own user_id
 CREATE POLICY "Users can insert own mice" ON mice
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 ```
 
-**How it works**: Every query automatically gets filtered. When you run `SELECT * FROM mice`, PostgreSQL secretly adds `WHERE user_id = [your_id]`. You literally cannot see other users' data, even if you try.
-
-**The analogy**: Imagine a library where every book is tagged with the borrower's name, and you're physically incapable of seeing books with someone else's name. That's RLS.
+**Why this matters**: The Supabase `anon` key is public. Without RLS, anyone with the key could read/write all data. With RLS, users can only access their own records.
 
 ---
 
 ## Authentication: Magic Links
 
-### Why Magic Links?
+### Flow
 
-Traditional auth flow:
-1. User creates password
-2. User forgets password
-3. User clicks "Forgot Password"
-4. User gets email
-5. User creates new password
-6. User forgets new password
-7. Repeat forever
-
-Magic link flow:
 1. User enters email
-2. User clicks link in email
-3. User is logged in
+2. Supabase sends email with link/code
+3. User clicks link OR enters 6-digit code
+4. Session created, user logged in
 
-**No passwords to remember. No passwords to leak. No password reset flow.**
-
-### How It Works
+### Implementation
 
 ```jsx
+// Send magic link
 const { error } = await supabase.auth.signInWithOtp({
   email: email,
   options: {
-    emailRedirectTo: window.location.origin + window.location.pathname
+    emailRedirectTo: window.location.href.split('?')[0]
   }
+});
+
+// Verify OTP code
+const { error } = await supabase.auth.verifyOtp({
+  email: email,
+  token: otp,
+  type: 'email'
 });
 ```
 
-Supabase sends an email with a special link. When clicked:
-1. The link contains a secure token
-2. Supabase verifies the token
-3. A session is created
-4. The user is redirected back to our app
+### Why Magic Links?
 
-### The Redirect URL Gotcha
-
-When deploying to GitHub Pages, we hit an issue: the magic link was redirecting to `https://username.github.io/` instead of `https://username.github.io/repo-name/`.
-
-**The fix**: Explicitly set `emailRedirectTo` to include the full path:
-
-```jsx
-emailRedirectTo: window.location.origin + window.location.pathname
-```
-
-This ensures users land back on the correct page after authentication.
+- No passwords to remember
+- No passwords to leak
+- No password reset flow
+- Works on any device with email access
 
 ---
 
 ## The Offline-First Philosophy
 
-### The Problem
+### Dual Storage Strategy
 
-Lab computers often have:
-- Spotty internet connections
-- Institutional firewalls that block random services
-- No IT support when things break at 2 AM
-
-### The Solution
-
-Everything saves to **both** the cloud and localStorage:
+Every data change is saved to both:
+1. **React state** (immediate UI update)
+2. **localStorage** (local backup)
+3. **Supabase** (cloud sync, if online)
 
 ```jsx
-// After successful cloud save
+// 1. Update React state immediately (optimistic UI)
 setMice([newMouse, ...mice]);
 
-// This triggers the localStorage sync
+// 2. localStorage sync happens via useEffect
 useEffect(() => {
   if (dataLoaded) {
     localStorage.setItem('labManager_mice', JSON.stringify(mice));
   }
 }, [mice]);
-```
 
-If the cloud save fails, the data is still in localStorage. Users can export/import JSON backups to transfer data between computers.
+// 3. Supabase sync
+if (supabase && user && !user.offline) {
+  const { error } = await supabase.from('mice').insert({ ...newMouse, user_id: user.id });
+  if (error) alert('Cloud error. Data saved locally.');
+}
+```
 
 ### Offline Mode
 
-Users can click "Continue Offline" to use the app without any cloud connection:
+Users can click "Continue Offline" to use the app without cloud:
 
 ```jsx
-const offlineUser = { offline: true };
+const offlineUser = { offline: true, id: 'offline-user' };
 setUser(offlineUser);
 ```
 
-The app works exactly the same, just without sync. When they get back online, they can use the backup/restore feature.
+The app works identically, just without sync. Export/Import handles data transfer.
 
 ---
 
-## Dynamic Schemas: The Secret Sauce
+## Dynamic Schemas
 
-### The Problem
+### Problem
+Different labs need different fields. Hardcoding fields means constant code changes.
 
-Different labs have different needs. One might track "Injection Site". Another might need "Antibody Used". Hardcoding fields means constant code changes.
-
-### The Solution
-
-Fields are defined in a schema array:
+### Solution
+Fields are defined in schema arrays:
 
 ```jsx
 const DEFAULT_MOUSE_SCHEMA = [
@@ -360,32 +377,31 @@ const DEFAULT_MOUSE_SCHEMA = [
 ];
 ```
 
-The `DynamicForm` component reads this schema and renders the appropriate inputs:
+The `DynamicForm` component renders inputs based on schema:
 
 ```jsx
-function DynamicForm({ schema, onSubmit }) {
-  return schema.map(field => {
-    if (field.type === 'text') return <input type="text" ... />;
-    if (field.type === 'select') return <select ... />;
-    if (field.type === 'date') return <input type="date" ... />;
-    // etc.
-  });
-}
+{schema.map(field => {
+  if (field.type === 'text') return <input type="text" ... />;
+  if (field.type === 'select') return <select ... />;
+  if (field.type === 'multicheck') return <CheckboxGroup ... />;
+  if (field.type === 'textarea') return <textarea ... />;
+  // ...
+})}
 ```
-
-**The power**: Users can add, remove, and reorder fields through the Settings panel without touching any code.
 
 ### Schema Migration
 
-When we add new default fields, existing users have old schemas cached. The `mergeSchemas` function handles this:
+When defaults change, `mergeSchemas` reconciles old cached schemas with new defaults:
 
 ```jsx
 const mergeSchemas = (defaultSchema, savedSchema) => {
-  const defaultByKey = Object.fromEntries(defaultSchema.map(f => [f.key, f]));
+  const defaultByKey = {};
+  defaultSchema.forEach(f => { defaultByKey[f.key] = f; });
+  
   const savedKeys = new Set(savedSchema.map(f => f.key));
   const newFields = defaultSchema.filter(f => !savedKeys.has(f.key));
   
-  // Update existing fields with default's required property
+  // Sync required property from defaults
   const updatedSaved = savedSchema.map(f => {
     if (defaultByKey[f.key]) {
       return { ...f, required: defaultByKey[f.key].required };
@@ -397,333 +413,199 @@ const mergeSchemas = (defaultSchema, savedSchema) => {
 };
 ```
 
-This ensures:
-1. New fields get added automatically
-2. Changed properties (like `required`) get updated
-3. User customizations (field order, custom fields) are preserved
-
 ---
 
-## Bugs We Encountered (And How We Squashed Them)
+## Label Printing System
 
-### Bug #1: "Invalid input syntax for type integer"
+### Design Goals
 
-**Symptom**: Saving a form with empty number fields crashed.
+1. **Compact**: Fit on small dish lids
+2. **Readable**: Essential info at a glance
+3. **No Field Names**: Just values (saves space)
+4. **Consistent Format**: `value/value/value` style (no spaces)
+5. **Hierarchical Config**: Group-level and field-level toggles
 
-**Root cause**: Empty form fields return `""` (empty string). PostgreSQL expected `NULL` or a number, not an empty string.
+### Default Label Layout
 
-**The fix**:
-```jsx
-const handleSubmit = (e) => {
-  const cleanedData = {};
-  Object.keys(form).forEach(key => {
-    const field = schema.find(f => f.key === key);
-    if (field?.type === 'number') {
-      cleanedData[key] = form[key] === '' ? null : Number(form[key]);
-    } else {
-      cleanedData[key] = form[key] === '' ? null : form[key];
-    }
-  });
-  onSubmit(cleanedData);
+```
+S-XXXX-XXXX              ← Slice ID (bold)
+M001/M/7m                ← Mouse#/Sex/Age
+WT/GFP+                  ← Genotype/Labeling
+16μm/1/30                ← Thickness/CryoDate (region OFF by default)
+─────────────────        ← Dashed separator
+10μM Drug A              ← Treatment (from junction table)
+```
+
+### Hierarchical Configuration
+
+```javascript
+const DEFAULT_LABEL_CONFIG = {
+  fontSize: 7,
+  labelWidth: 38,
+  
+  // Line 1: Slice ID
+  showSliceId: true,
+  
+  // Line 2: Mouse basic (group)
+  showMouseBasic: true,
+  showMouseNumber: true,
+  showSex: true,
+  showAge: true,
+  
+  // Line 3: Mouse details (group)
+  showMouseDetails: true,
+  showGenotype: true,
+  showLabeling: true,
+  
+  // Line 4: Slice info (group)
+  showSliceInfo: true,
+  showRegion: false,      // OFF by default
+  showThickness: true,
+  showCryoDate: true,
+  
+  // Line 5: Treatment (with separator)
+  showTreatment: true,
 };
 ```
 
-**Lesson**: Always sanitize data at the boundary between your app and external systems.
+The configuration UI provides:
+- **Group toggles**: Enable/disable entire lines
+- **Field toggles**: Fine-tune which fields appear within a line
+- Group checkbox shows indeterminate state when some but not all children are enabled
 
-### Bug #2: RLS Policy Violation
+### Implementation
 
-**Symptom**: "New row violates row-level security policy for table experiments"
-
-**Root cause**: We were inserting records without the `user_id` field, but RLS required it.
-
-**The fix**:
 ```jsx
-// Before (broken)
-await supabase.from('experiments').insert(newExp);
-
-// After (working)
-await supabase.from('experiments').insert({ ...newExp, user_id: user.id });
+const printLabels = () => {
+  const w = window.open('', '_blank');
+  w.document.write(`
+    <style>
+      body { font-family: 'Courier New', monospace; font-size: ${fontSize}pt; }
+      .label { border: 0.5pt solid #000; padding: 1.5mm; width: ${width}mm; }
+      .treatment { border-top: 0.4pt dashed #666; margin-top: 0.8mm; }
+    </style>
+    <body>
+      ${labelData.map(({ exp, slice, mouse, treatment }) => `
+        <div class="label">
+          <div class="id">${exp.id}</div>
+          <div>${mouse.mouseNumber}/${abbrevSex(mouse.sex)}/${age}/${mouse.genotype}</div>
+          <div>${abbrevRegion(slice.region)}/${slice.thickness}μm</div>
+          ${treatment ? `<div class="treatment">${treatment}</div>` : ''}
+        </div>
+      `).join('')}
+    </body>
+  `);
+  w.print();
+};
 ```
 
-**Lesson**: RLS is strict by design. If your policy says `user_id = auth.uid()`, you must provide `user_id` on insert.
+### Selection System
 
-### Bug #3: Manual Age Not Displaying
+Labels tab uses a two-level selection:
+1. **Experiment level**: Click to select/deselect all slices in experiment
+2. **Slice level**: Click individual slices to fine-tune selection
 
-**Symptom**: User entered age manually, but table showed "N/A".
-
-**Root cause**: Display logic checked `age.days !== null`, but manual ages only have `months`, not `days`.
-
-**The fix**:
 ```jsx
-// Before (broken)
-{age.days !== null ? `${age.months}m` : 'N/A'}
+// State: Map<experimentId, Set<experimentSliceId>>
+const [selectedItems, setSelectedItems] = useState(new Map());
 
-// After (working)
-{age.months !== null ? `${age.months}m` : 'N/A'}
+// Toggle experiment (all slices)
+const toggleExp = (expId, allSliceIds) => {
+  const newSelected = new Map(selectedItems);
+  if (newSelected.has(expId)) {
+    newSelected.delete(expId);
+  } else {
+    newSelected.set(expId, new Set(allSliceIds));
+  }
+  setSelectedItems(newSelected);
+};
+
+// Toggle individual slice
+const toggleSlice = (expId, sliceId) => {
+  // Add/remove slice from experiment's set
+  // ...
+};
 ```
 
-**Lesson**: When you have multiple code paths that produce similar data structures, ensure your display logic handles all variations.
+---
 
-### Bug #4: Abbreviations in Template Literals
+## Bugs We Encountered
 
-**Symptom**: Labels printed "undefined" instead of "M" or "F".
+### Bug #1: Sex Field Still Required After Making Optional
 
-**Root cause**: Functions like `abbrevSex()` couldn't be called inside template literal strings being passed to `document.write()`.
-
-**The fix**: Pre-compute values before the template:
-```jsx
-// Before (broken)
-`<div>${abbrevSex(mouse.sex)}</div>`
-
-// After (working)
-const sexAbbrev = abbrevSex(mouse?.sex);
-// ... later in template
-`<div>${sexAbbrev}</div>`
-```
-
-**Lesson**: Template literals in strings passed to other contexts (like `document.write()`) don't have access to your local functions.
-
-### Bug #5: Sex Field Still Required
-
-**Symptom**: Changed `required: true` to `required: false`, but form still demanded a value.
+**Symptom**: Changed schema to `required: false`, but browser still showed validation error.
 
 **Root cause**: Old schema with `required: true` was cached in localStorage.
 
-**The fix**: Updated `mergeSchemas` to sync the `required` property:
+**Fix**: Updated `mergeSchemas` to sync `required` property from defaults.
+
+### Bug #2: Template Literal Functions in document.write()
+
+**Symptom**: Labels printed "undefined" instead of "M" or "F".
+
+**Root cause**: Functions like `abbrevSex()` inside template strings passed to `document.write()` couldn't access local scope.
+
+**Fix**: Pre-compute values before the template:
 ```jsx
-const updatedSaved = savedSchema.map(f => {
-  if (defaultByKey[f.key]) {
-    return { ...f, required: defaultByKey[f.key].required };
-  }
-  return f;
-});
+const sexAbbrev = abbrevSex(mouse?.sex);  // Compute first
+// Later in template:
+`<div>${sexAbbrev}</div>`
 ```
 
-**Lesson**: When you have cached configuration, you need migration logic. Schema evolution is a real problem even in simple apps.
+### Bug #3: RLS on db_version Table
 
-### Bug #6: Network Errors on Institutional Networks
+**Symptom**: Supabase warning about public access to `db_version` table.
 
-**Symptom**: Magic links worked in the office but failed in the wet lab.
+**Fix**: Added read-only RLS policy:
+```sql
+ALTER TABLE db_version ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Authenticated users can view db_version" ON db_version
+    FOR SELECT USING (auth.role() = 'authenticated');
+```
 
-**Root cause**: Institutional firewalls often block unfamiliar domains like `*.supabase.co`.
+### Bug #4: Integer Field Empty String
 
-**The fix**: No code fix possible. Solutions:
-1. Ask IT to whitelist the domain
-2. Use a VPN
-3. Use mobile hotspot
-4. Work in offline mode
+**Symptom**: "Invalid input syntax for type integer" when saving form with empty number field.
 
-**Lesson**: Enterprise/institutional networks are hostile environments. Always have an offline fallback.
+**Fix**: Convert empty strings to null:
+```jsx
+if (field.type === 'number') {
+  cleanedData[key] = form[key] === '' ? null : Number(form[key]);
+}
+```
 
 ---
 
 ## Lessons Learned
 
-### 1. Start Simple, Add Complexity Only When Needed
-
-We started with a single HTML file. No build system, no bundler, no package.json. This let us iterate incredibly fast in the early stages.
-
-**The temptation**: "But what about code splitting? Tree shaking? Hot module replacement?"
-
-**The reality**: For a lab tool used by a handful of researchers, none of that matters. Ship something useful first.
+### 1. Start Simple, Add Complexity When Needed
+Single HTML file. No build system. Iterate fast.
 
 ### 2. Optimistic UI with Graceful Degradation
+Update UI immediately. Save to cloud in background. Handle failures gracefully.
 
-Update the UI immediately, save to the cloud in the background, and handle failures gracefully:
+### 3. Security Through Architecture
+RLS makes public API keys safe. Security lives in the database, not the code.
 
-```jsx
-// Update local state immediately
-setMice([newMouse, ...mice]);
+### 4. Schema Evolution is Hard
+When you have cached configuration, you need migration logic.
 
-// Save to cloud (might fail)
-try {
-  await supabase.from('mice').insert(newMouse);
-} catch (err) {
-  alert('Error saving to cloud. Data saved locally.');
-}
-```
+### 5. Dates Are Always Complicated
+Use a date library for anything non-trivial.
 
-Users see instant feedback. If the cloud fails, they don't lose work.
-
-### 3. Error Messages Are User Interface
-
-Our early code swallowed errors silently. Users would save data, and it would mysteriously disappear on refresh (because the cloud save failed silently).
-
-**Now**: Every database operation has explicit error handling and user-facing messages:
-
-```jsx
-if (error) {
-  console.error('Supabase error:', error);
-  alert('Error saving to cloud: ' + error.message + '\n\nData saved locally.');
-}
-```
-
-### 4. Security Through Architecture, Not Obscurity
-
-We were initially worried about exposing Supabase API keys in public code. But the architecture makes this safe:
-
-- The `anon` key is **designed** to be public
-- RLS policies enforce data isolation at the database level
-- Users can only access their own data, period
-
-This is better than hiding keys in environment variables and hoping nobody finds them.
-
-### 5. Schema Evolution Is Hard
-
-Even in a simple app, schemas change:
-- New fields get added
-- Required fields become optional
-- Options lists change
-
-The `mergeSchemas` function handles this, but it's still tricky. Every schema change needs to consider:
-- What happens to existing data?
-- What happens to cached schemas?
-- What database migrations are needed?
-
-### 6. Dates and Times Are Always Complicated
-
-We have:
-- Birth dates (just a date, no time)
-- Sacrifice dates (just a date)
-- Cryosection dates (just a date)
-- Created timestamps (full datetime with timezone)
-
-Each requires slightly different handling. And then there's age calculation, which has edge cases around month lengths.
-
-**Advice**: Use a date library for anything non-trivial. We did manual math and it mostly works, but it's fragile.
+### 6. Human-Readable IDs Matter
+`M-LXK8-F3A2` beats `550e8400-e29b-41d4-a716-446655440000` for lab work.
 
 ---
 
-## Best Practices Discovered
+## What's Next?
 
-### 1. Defensive Programming
-
-Always check if data exists before using it:
-
-```jsx
-// Bad
-const age = calculateAge(mouse.birthDate);
-
-// Good
-const age = mouse ? calculateAge(mouse.birthDate, mouse.sacrificeDate) : null;
-```
-
-### 2. Consistent Data Transformation
-
-We created helper functions for common transformations:
-
-```jsx
-function abbrevSex(sex) {
-  if (!sex) return '?';
-  if (sex === 'Male' || sex === 'M') return 'M';
-  if (sex === 'Female' || sex === 'F') return 'F';
-  return sex;
-}
-```
-
-This handles:
-- Null/undefined values
-- Legacy data ("Male" vs "M")
-- Unknown values (returns as-is)
-
-### 3. Single Source of Truth
-
-Schemas are defined once as constants:
-
-```jsx
-const DEFAULT_MOUSE_SCHEMA = [...];
-const DEFAULT_SLICE_SCHEMA = [...];
-const DEFAULT_EXPERIMENT_SCHEMA = [...];
-```
-
-Everything else references these. No duplicating field lists across components.
-
-### 4. Fail Loud, Recover Gracefully
-
-```jsx
-try {
-  const { error } = await supabase.from('mice').update(data).eq('id', id);
-  if (error) {
-    console.error('Supabase error:', error);  // Fail loud (for debugging)
-    alert('Error: ' + error.message);          // Inform user
-  }
-} catch (err) {
-  console.error('Exception:', err);            // Fail loud
-  alert('Unexpected error');                   // Inform user
-}
-// Data is saved locally regardless                // Recover gracefully
-setMice(mice.map(m => m.id === id ? {...m, ...data} : m));
-```
-
-### 5. IDs Should Be Readable
-
-We generate IDs like `M-LXK8F3-A2B4` instead of UUIDs like `550e8400-e29b-41d4-a716-446655440000`.
-
-Researchers need to read these IDs, write them on tubes, and discuss them with colleagues. Human-friendly IDs matter.
-
----
-
-## What I'd Do Differently
-
-### 1. TypeScript from the Start
-
-As the codebase grew, keeping track of data shapes became harder. TypeScript would catch bugs like:
-
-```typescript
-// TypeScript would catch this
-mouse.birthdate  // Error: did you mean 'birthDate'?
-```
-
-### 2. Proper State Management
-
-React Context works, but as the app grew, we ended up with a lot of state in one place. Something like Zustand would provide:
-- Better organization
-- Easier debugging
-- Computed/derived state
-
-### 3. Component Library
-
-We reinvented several UI patterns (modals, sortable tables, form inputs). A component library like shadcn/ui would have saved time and provided better accessibility.
-
-### 4. Testing
-
-We have no automated tests. For a small project, this was fine. But bugs like "wrong property checked for age display" would be caught instantly by a simple unit test:
-
-```javascript
-test('getMouseAge returns manual age when no birthDate', () => {
-  const mouse = { ageMonths: 6 };
-  const age = getMouseAge(mouse);
-  expect(age.months).toBe(6);
-});
-```
-
-### 5. Better Offline Sync
-
-Currently, offline mode is "all or nothing". A proper sync system would:
-- Queue changes made offline
-- Sync when connection returns
-- Handle conflicts between offline and online changes
-
-This is complex, but libraries like PouchDB or Watermelon DB make it manageable.
-
----
-
-## Conclusion
-
-This project proves that modern web development doesn't require a complex setup. A single HTML file can:
-- Use React with hooks
-- Connect to a cloud database
-- Handle authentication
-- Work offline
-- Print physical labels
-
-The key insights:
-1. **Simplicity is a feature**. Fewer moving parts means fewer things to break.
-2. **Progressive enhancement works**. Start with local storage, add cloud sync, keep offline as fallback.
-3. **Security can be architectural**. RLS makes public API keys safe.
-4. **User feedback matters**. Always tell users what's happening, especially when things fail.
-
-The app isn't perfect. The code could be cleaner, the architecture more scalable. But it solves a real problem for real researchers, and it shipped. That's what matters.
+Potential future improvements:
+- **TypeScript**: Better type safety as codebase grows
+- **Testing**: Unit tests for data transformations
+- **Better Offline Sync**: Queue changes, sync when online
+- **Multi-user Collaboration**: Real-time updates between lab members
+- **Image Attachments**: Photos of slices/experiments
 
 ---
 

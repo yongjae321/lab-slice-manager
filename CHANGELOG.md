@@ -1,75 +1,100 @@
 # Changelog
 
-All notable changes to Lab Slice Manager will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
+All notable changes to Lab Slice Manager.
 
 ---
 
-## [2.2] - 2025-01-24
+## [3.0] - 2025-01-30
 
-### Added
-- **Labeling Field**: New "Labeling" field for mice (appears as column in table)
-- **Multiple Data File Paths**: Experiments now support adding multiple data file paths as a list (add/remove individual paths)
-- **Field-Specific Search**: All panels (Mice, Slices, Experiments, Labels) now have a dropdown to select which field to search in
-- **Supabase Configuration UI**: Enter Supabase credentials directly in the app (no need to edit HTML file)
-- New field type "Multiple Paths/Lines" available in schema editor
+### 🚨 Breaking Changes
+- **Complete architecture redesign** - Fresh database required
+- Old v2.x data must be exported and manually re-entered
+- Experiments no longer belong to a single slice
 
 ### Changed
-- **Dynamic Column Order**: Table/card columns now follow schema order - reorder fields in Settings → Schema to change display order
-- Search now defaults to "All Fields" but can be narrowed to specific fields
-- Experiment display now shows Data Files and Protocol as separate sections
-- Slices and Experiments search can filter by mouse-related fields (Mouse Number, Sex, Genotype)
-- Labels search can filter by slice-related fields as well
-- Supabase credentials now stored in browser localStorage (survives file updates)
+- **Many-to-Many Experiments**: Experiments can now contain multiple slices from different mice
+- **Per-Slice Treatments**: Each slice within an experiment has its own treatment/protocol field
+- **Independent Experiments**: Create experiments first, then add slices (or vice versa)
+- **Labels Tab Redesign**: Select experiments, then select individual slices within for printing
+- **New Label Layout**: 
+  - Line 1: Slice ID (bold)
+  - Line 2: MouseNumber/Sex/Age
+  - Line 3: Genotype/Labeling  
+  - Line 4: Thickness/CryoDate (region OFF by default)
+  - Line 5: Treatment (with separator)
+- **Hierarchical Label Config**: Group-level toggles + individual field toggles
+
+### Added
+- `experiment_slices` junction table linking experiments to slices
+- "Add to Experiment" modal with two options:
+  - Create new experiment with this slice
+  - Add to existing experiment
+- Experiment expansion view showing all linked slices with treatments
+- Per-slice treatment editing within experiments
+- Settings panel now includes "Per-Slice" schema tab
+
+### Removed
+- `sliceId` foreign key from experiments table (replaced by junction table)
+- Old label printing flow (was based on single slice per experiment)
+
+### Database
+- **Fresh schema required** - Run `fresh_schema_v3.sql`
+- New tables: `experiment_slices` (junction table)
+- Modified: `experiments` (removed sliceId, added title, purpose, operator fields)
+
+---
+
+## [2.3] - 2025-01-28
 
 ### Fixed
-- **Magic link redirect**: Fixed redirect URL to include full path (fixes GitHub Pages subpath deployments)
-- **Data not saving**: Added error handling - shows alert if Supabase save fails, data still saved locally
-- **Data disappearing on refresh**: Fixed loading logic that could overwrite local data with empty Supabase results
-- **Silent failures**: All Supabase errors now logged to browser console for debugging
+- Sex field now properly optional (browser no longer requires selection)
+- `mergeSchemas` function now syncs `required` property from defaults
 
-### Database Changes
-- **Migration required from v2.1** (if using Supabase)
-- New column: `dataFiles` (JSONB array) in experiments table
-- See `migrations/v2.2_from_v2.1.sql`
+### Security
+- Added RLS policy to `db_version` table (read-only for authenticated users)
+
+---
+
+## [2.2] - 2025-01-26
+
+### Added
+- Labeling field for mice
+- Multiple data file paths for experiments (multitext field type)
+- Field-specific search dropdowns in all tabs
+- Supabase configuration UI in login screen
+- Dynamic column ordering based on schema
+
+### Changed
+- Supabase credentials can now be entered in the app (stored in localStorage)
+- Improved search to work on specific fields
+
+### Fixed
+- Various bug fixes for edge cases
 
 ---
 
 ## [2.1] - 2025-01-24
 
 ### Changed
-- Age display now shows **months + days** instead of weeks + days (e.g., "3m 15d (105d)")
-- Brain region is now **multi-select checkboxes** (Hippocampus, Cortex) instead of dropdown
-- Default slice thickness changed from 300μm to **16μm**
-- Protocol field now supports **multiple lines** of text
-- Mouse sex now displayed next to mouse number in Slices and Experiments tabs
+- Age display now shows months + days instead of weeks + days
+- Brain region is now multi-select checkboxes (H, C)
+- Default slice thickness changed to 16μm
+- Protocol field now supports multiple lines
 
 ### Added
-- **Cryosection Date** field for slices
-- **Embedding Matrix** field (TFM/OCT, default TFM) for slices
-- **Sort buttons** for all list views (Mice, Slices, Experiments, Labels)
-- **Search function** in Labels tab
-- **Database Updates & Migration** section in manual (Section 8)
-- **Version Management & Update Workflow** section in manual (Section 9)
-- `db_version` table for tracking database version
-- Version history table in manual
+- Cryosection Date field for slices
+- Embedding Matrix field (TFM/OCT) for slices
+- Sort buttons for all list views
+- Search function in Labels tab
+- Database migration section in manual
 
 ### Removed
 - Hemisphere field from slices
 - Slicing Date from mice (use Sacrifice Date instead)
 - Experiment Type field from experiments
 
-### Fixed
-- Label text now wraps properly instead of overflowing the box
-- Font size can now be set to non-integer values (minimum 4pt)
-- Label width can now be set to non-integer values
-
-### Database Changes
-- **Migration required from v1.0**
-- See `migrations/v2.1_from_v1.0.sql`
-- New columns: `cryosectionDate`, `embeddingMatrix`
-- Changed column: `region` (TEXT → JSONB for multi-select)
+### Database
+- Migration required from v1.0 (see `migrations/v2.1_from_v1.0.sql`)
 
 ---
 
@@ -77,50 +102,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 - Initial release
-- **Mouse tracking**: ID, number, sex, genotype, birth date, sacrifice date, notes
-- **Slice tracking**: Linked to mouse, region, thickness, quality, storage location, notes
-- **Experiment tracking**: Linked to slice, date, protocol, operator, results, notes
-- **Label printing**: Customizable font size, label width, field selection
-- **Supabase integration**: Cloud sync with magic link / OTP authentication
-- **Offline mode**: Full functionality without internet
-- **Export/Import**: JSON backup for data portability
-- **Editable schemas**: Add/remove/rename fields for each entity
-- **Search and filter**: Find records across all fields
-
-### Database
-- Initial schema with 4 tables: `mice`, `slices`, `experiments`, `user_settings`
-
----
-
-## How to Use This Changelog
-
-### When Updating
-
-1. Add a new section at the top with the version number and date
-2. Group changes under these categories:
-   - **Added** - New features
-   - **Changed** - Changes to existing features
-   - **Removed** - Removed features
-   - **Fixed** - Bug fixes
-   - **Database Changes** - Any schema changes requiring migration
-
-### Version Numbers
-
-- **MAJOR.MINOR** format (e.g., 2.1)
-- Increment MAJOR for breaking changes or major new features
-- Increment MINOR for small improvements, bug fixes, UI tweaks
-
-### Example Entry
-
-```markdown
-## [2.2] - 2025-02-15
-
-### Added
-- Export to CSV feature
-
-### Fixed
-- Sorting now works correctly with empty values
-
-### Database Changes
-- None (no migration required)
-```
+- Mouse, Slice, Experiment tracking
+- Label printing
+- Supabase integration
+- Magic link authentication
+- Export/Import backup
+- Dynamic schema editor
+- Offline mode support
