@@ -428,6 +428,7 @@ const mergeSchemas = (defaultSchema, savedSchema) => {
 ### Default Label Layout
 
 ```
+E-XXXX-XXXX              ← Experiment ID (optional, off by default)
 S-XXXX-XXXX              ← Slice ID (bold)
 M001/M/7m                ← Mouse#/Sex/Age
 WT/GFP+                  ← Genotype/Labeling
@@ -442,6 +443,10 @@ WT/GFP+                  ← Genotype/Labeling
 const DEFAULT_LABEL_CONFIG = {
   fontSize: 7,
   labelWidth: 38,
+  labelPadding: 1.0,    // mm, adjustable 0-3mm
+  
+  // Experiment ID (optional, off by default)
+  showExpId: false,
   
   // Line 1: Slice ID
   showSliceId: true,
@@ -469,6 +474,7 @@ const DEFAULT_LABEL_CONFIG = {
 ```
 
 The configuration UI provides:
+- **Size controls**: Font size (4-16pt), label width (20-80mm), padding (0-3mm)
 - **Group toggles**: Enable/disable entire lines
 - **Field toggles**: Fine-tune which fields appear within a line
 - Group checkbox shows indeterminate state when some but not all children are enabled

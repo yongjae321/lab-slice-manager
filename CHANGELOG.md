@@ -23,6 +23,9 @@ All notable changes to Lab Slice Manager.
   - Line 4: Thickness/CryoDate (region OFF by default)
   - Line 5: Treatment (with separator)
 - **Hierarchical Label Config**: Group-level toggles + individual field toggles
+- **Adjustable Label Padding**: 0-3mm padding (default 1mm) for compact labels
+- **Tighter Label Spacing**: Reduced line-height and margins for maximum space efficiency
+- **Optional Experiment ID**: Can print experiment ID at the top of labels (off by default)
 
 ### Added
 - `experiment_slices` junction table linking experiments to slices

@@ -369,6 +369,7 @@ Mouse A ──► Slice 1 ──────► Experiment Y (single slice exper
 
 **Default Label Format:**
 ```
+E-XXXX-XXXX          ← Experiment ID (optional, off by default)
 S-XXXX-XXXX          ← Slice ID (bold)
 M001/M/7m            ← Mouse#/Sex/Age
 WT/GFP+              ← Genotype/Labeling
@@ -385,16 +386,18 @@ WT/GFP+              ← Genotype/Labeling
 **Size Controls:**
 - **Font Size**: 4-16pt (default 7pt)
 - **Label Width**: 20-80mm (default 38mm)
+- **Padding**: 0-3mm (default 1mm) - can be set to 0 for maximum space
 
 **Line Configuration (hierarchical):**
 
-| Line | Group Toggle | Individual Fields |
-|------|--------------|-------------------|
-| Line 1 | Slice ID | (single field) |
-| Line 2 | Mouse Basic | Mouse Number, Sex, Age |
-| Line 3 | Mouse Details | Genotype, Labeling |
-| Line 4 | Slice Info | Region (off by default), Thickness, Cryo Date |
-| Line 5 | Treatment | (with dashed separator) |
+| Field | Group Toggle | Individual Fields |
+|-------|--------------|-------------------|
+| Experiment ID | (single toggle, off by default) | |
+| Slice ID | (single toggle) | |
+| Mouse Basic | ✓ | Mouse Number, Sex, Age |
+| Mouse Details | ✓ | Genotype, Labeling |
+| Slice Info | ✓ | Region (off by default), Thickness, Cryo Date |
+| Treatment | (single toggle) | (with dashed separator) |
 
 **How it works:**
 - Toggle a **group** to show/hide the entire line

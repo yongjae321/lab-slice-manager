@@ -87,6 +87,9 @@
     const DEFAULT_LABEL_CONFIG = {
       fontSize: 7,
       labelWidth: 38,
+      labelPadding: 1.0,  // mm, adjustable 0-3mm
+      // Line 0: Experiment ID (optional)
+      showExpId: false,
       // Line 1: Slice ID
       showSliceId: true,
       // Line 2: Mouse basic (group)
@@ -892,15 +895,17 @@
         w.document.write(`<!DOCTYPE html><html><head><title>Labels</title>
           <style>
             @media print { @page { margin: 3mm; } }
-            * { box-sizing: border-box; }
-            body { font-family: 'Courier New', monospace; font-size: ${cfg.fontSize}pt; line-height: 1.15; display: flex; flex-wrap: wrap; gap: 2mm; padding: 2mm; margin: 0; }
-            .label { border: 0.5pt solid #000; padding: 1.5mm; width: ${cfg.labelWidth}mm; page-break-inside: avoid; overflow-wrap: break-word; word-break: break-word; }
-            .id { font-weight: bold; font-size: ${cfg.fontSize + 0.5}pt; margin-bottom: 0.5mm; }
-            .treatment { margin-top: 0.8mm; padding-top: 0.8mm; border-top: 0.4pt dashed #666; white-space: pre-wrap; }
-            .row { margin: 0.2mm 0; }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: 'Courier New', monospace; font-size: ${cfg.fontSize}pt; line-height: 1.1; display: flex; flex-wrap: wrap; gap: 2mm; padding: 2mm; }
+            .label { border: 0.5pt solid #000; padding: ${cfg.labelPadding ?? 1}mm; width: ${cfg.labelWidth}mm; page-break-inside: avoid; overflow-wrap: break-word; word-break: break-word; }
+            .id { font-weight: bold; font-size: ${cfg.fontSize + 0.5}pt; }
+            .treatment { margin-top: 0.5mm; padding-top: 0.5mm; border-top: 0.4pt dashed #666; white-space: pre-wrap; }
           </style></head><body>
           ${labelData.map(({ exp, es, slice, mouse, age }) => {
             // Build each line conditionally
+            // Line 0: Experiment ID (optional)
+            const line0 = cfg.showExpId ? `<div class="id">${exp?.id || '?'}</div>` : '';
+            
             // Line 1: Slice ID
             const line1 = cfg.showSliceId ? `<div class="id">${slice?.id || '?'}</div>` : '';
             
@@ -911,7 +916,7 @@
               if (cfg.showSex) line2Parts.push(abbrevSex(mouse?.sex));
               if (cfg.showAge) line2Parts.push((age?.months ?? '?') + 'm');
             }
-            const line2 = line2Parts.length > 0 ? `<div class="row">${line2Parts.join('/')}</div>` : '';
+            const line2 = line2Parts.length > 0 ? `<div>${line2Parts.join('/')}</div>` : '';
             
             // Line 3: Mouse details (genotype/labeling)
             let line3Parts = [];
@@ -919,7 +924,7 @@
               if (cfg.showGenotype && mouse?.genotype) line3Parts.push(mouse.genotype);
               if (cfg.showLabeling && mouse?.labeling) line3Parts.push(mouse.labeling);
             }
-            const line3 = line3Parts.length > 0 ? `<div class="row">${line3Parts.join('/')}</div>` : '';
+            const line3 = line3Parts.length > 0 ? `<div>${line3Parts.join('/')}</div>` : '';
             
             // Line 4: Slice info (region/thickness/cryoDate)
             let line4Parts = [];
@@ -931,12 +936,12 @@
                 line4Parts.push((d.getMonth()+1) + '/' + d.getDate());
               }
             }
-            const line4 = line4Parts.length > 0 ? `<div class="row">${line4Parts.join('/')}</div>` : '';
+            const line4 = line4Parts.length > 0 ? `<div>${line4Parts.join('/')}</div>` : '';
             
             // Line 5: Treatment (with separator)
             const line5 = cfg.showTreatment && es?.treatment ? `<div class="treatment">${es.treatment}</div>` : '';
             
-            return `<div class="label">${line1}${line2}${line3}${line4}${line5}</div>`;
+            return `<div class="label">${line0}${line1}${line2}${line3}${line4}${line5}</div>`;
           }).join('')}
           <script>window.onload = () => window.print();<\/script>
         </body></html>`);
@@ -954,8 +959,9 @@
           </div>
 
           <div className="mb-4 p-4 bg-gray-800 rounded-lg border border-gray-700">
-            <div className="text-sm text-gray-400 mb-2">Preview ({labelConfig.fontSize}pt, {labelConfig.labelWidth}mm)</div>
-            <div className="bg-white text-black p-2 rounded inline-block font-mono" style={{ fontSize: `${labelConfig.fontSize}pt`, width: `${labelConfig.labelWidth * 2.8}px`, wordBreak: 'break-word' }}>
+            <div className="text-sm text-gray-400 mb-2">Preview ({labelConfig.fontSize}pt, {labelConfig.labelWidth}mm, pad:{labelConfig.labelPadding ?? 1}mm)</div>
+            <div className="bg-white text-black rounded inline-block font-mono border border-gray-400" style={{ fontSize: `${labelConfig.fontSize}pt`, width: `${labelConfig.labelWidth * 2.8}px`, padding: `${(labelConfig.labelPadding ?? 1) * 3.78}px`, lineHeight: 1.1, wordBreak: 'break-word' }}>
+              {labelConfig.showExpId && <div style={{ fontWeight: 'bold' }}>E-XXXX-XX</div>}
               {labelConfig.showSliceId && <div style={{ fontWeight: 'bold' }}>S-XXXX-XX</div>}
               {labelConfig.showMouseBasic && <div>
                 {[labelConfig.showMouseNumber && 'M001', labelConfig.showSex && 'M', labelConfig.showAge && '7m'].filter(Boolean).join('/')}
@@ -1071,7 +1077,7 @@
       return (
         <div className="space-y-4">
           {/* Size controls */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm text-gray-400 mb-1">Font: {local.fontSize}pt</label>
               <input type="range" min="4" max="16" step="0.5" value={local.fontSize} onChange={(e) => setLocal({ ...local, fontSize: parseFloat(e.target.value) })} className="w-full" />
@@ -1080,41 +1086,52 @@
               <label className="block text-sm text-gray-400 mb-1">Width: {local.labelWidth}mm</label>
               <input type="range" min="20" max="80" step="0.5" value={local.labelWidth} onChange={(e) => setLocal({ ...local, labelWidth: parseFloat(e.target.value) })} className="w-full" />
             </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Padding: {local.labelPadding ?? 1}mm</label>
+              <input type="range" min="0" max="3" step="0.1" value={local.labelPadding ?? 1} onChange={(e) => setLocal({ ...local, labelPadding: parseFloat(e.target.value) })} className="w-full" />
+            </div>
           </div>
           
           <div className="text-xs text-gray-500 border-t border-gray-700 pt-3">Label Lines (top to bottom)</div>
           
+          {/* Line 0: Experiment ID (optional) */}
+          <label className="flex items-center gap-2 text-sm border border-gray-700 rounded-lg p-3 cursor-pointer">
+            <input type="checkbox" checked={local.showExpId} onChange={() => toggleField('showExpId')} className="rounded" />
+            <span className="font-medium">Experiment ID</span>
+            <span className="text-gray-500 text-xs">(E-XXXX-XX)</span>
+          </label>
+          
           {/* Line 1: Slice ID */}
           <label className="flex items-center gap-2 text-sm border border-gray-700 rounded-lg p-3 cursor-pointer">
             <input type="checkbox" checked={local.showSliceId} onChange={() => toggleField('showSliceId')} className="rounded" />
-            <span className="font-medium">Line 1: Slice ID</span>
+            <span className="font-medium">Slice ID</span>
             <span className="text-gray-500 text-xs">(S-XXXX-XX)</span>
           </label>
           
           {/* Line 2: Mouse Basic */}
-          <GroupCheckbox groupKey="showMouseBasic" label="Line 2: Mouse Basic" childKeys={['showMouseNumber', 'showSex', 'showAge']}>
+          <GroupCheckbox groupKey="showMouseBasic" label="Mouse Basic" childKeys={['showMouseNumber', 'showSex', 'showAge']}>
             <FieldCheckbox fieldKey="showMouseNumber" label="Mouse Number" />
             <FieldCheckbox fieldKey="showSex" label="Sex (M/F)" />
             <FieldCheckbox fieldKey="showAge" label="Age (months)" />
           </GroupCheckbox>
           
           {/* Line 3: Mouse Details */}
-          <GroupCheckbox groupKey="showMouseDetails" label="Line 3: Mouse Details" childKeys={['showGenotype', 'showLabeling']}>
+          <GroupCheckbox groupKey="showMouseDetails" label="Mouse Details" childKeys={['showGenotype', 'showLabeling']}>
             <FieldCheckbox fieldKey="showGenotype" label="Genotype" />
             <FieldCheckbox fieldKey="showLabeling" label="Labeling" />
           </GroupCheckbox>
           
           {/* Line 4: Slice Info */}
-          <GroupCheckbox groupKey="showSliceInfo" label="Line 4: Slice Info" childKeys={['showRegion', 'showThickness', 'showCryoDate']}>
+          <GroupCheckbox groupKey="showSliceInfo" label="Slice Info" childKeys={['showRegion', 'showThickness', 'showCryoDate']}>
             <FieldCheckbox fieldKey="showRegion" label="Region (H/C)" />
             <FieldCheckbox fieldKey="showThickness" label="Thickness (μm)" />
             <FieldCheckbox fieldKey="showCryoDate" label="Cryosection Date" />
           </GroupCheckbox>
           
-          {/* Line 5: Treatment */}
+          {/* Treatment */}
           <label className="flex items-center gap-2 text-sm border border-gray-700 rounded-lg p-3 cursor-pointer">
             <input type="checkbox" checked={local.showTreatment} onChange={() => toggleField('showTreatment')} className="rounded" />
-            <span className="font-medium">Line 5: Treatment</span>
+            <span className="font-medium">Treatment</span>
             <span className="text-gray-500 text-xs">(with separator line)</span>
           </label>
           
