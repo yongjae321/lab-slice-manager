@@ -164,6 +164,7 @@
       }, []);
 
       useEffect(() => { if (user && !dataLoaded) loadData(); }, [user, dataLoaded]);
+      useEffect(() => { if (!user) { setDataLoaded(false); setMice([]); setSlices([]); setExperiments([]); setExperimentSlices([]); } }, [user]);
 
       const mergeSchemas = (defaultSchema, savedSchema) => {
         const defaultByKey = {}; defaultSchema.forEach(f => { defaultByKey[f.key] = f; });
@@ -240,7 +241,7 @@
         }
       }, [mouseSchema, sliceSchema, experimentSchema, experimentSliceSchema, labelConfig]);
 
-      const contextValue = { mice, setMice, slices, setSlices, experiments, setExperiments, experimentSlices, setExperimentSlices, mouseSchema, setMouseSchema, sliceSchema, setSliceSchema, experimentSchema, setExperimentSchema, experimentSliceSchema, setExperimentSliceSchema, labelConfig, setLabelConfig, user, supabase };
+      const contextValue = { mice, setMice, slices, setSlices, experiments, setExperiments, experimentSlices, setExperimentSlices, mouseSchema, setMouseSchema, sliceSchema, setSliceSchema, experimentSchema, setExperimentSchema, experimentSliceSchema, setExperimentSliceSchema, labelConfig, setLabelConfig, user, setUser, supabase };
 
       if (authLoading) return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center"><div className="animate-spin"><Icon name="Loader2" className="w-8 h-8" /></div></div>;
       if (!user) return <AuthScreen setUser={setUser} />;
@@ -301,16 +302,20 @@
                       </>
                     )}
                     {message && <p className="text-sm text-center text-yellow-400">{message}</p>}
-                    <div className="border-t border-gray-700 my-4"></div>
-                    <button onClick={() => setUser({ offline: true, id: 'offline-user' })} className="w-full py-3 bg-gray-700 hover:bg-gray-600 rounded-lg">Continue Offline</button>
+                    <button onClick={() => setShowConfig(true)} className="w-full mt-2 py-2 text-gray-500 hover:text-gray-300 text-sm">⚙️ Supabase Settings</button>
+                    <div className="border-t border-gray-700 mt-2 pt-3">
+                      <button onClick={() => setUser({ offline: true, id: 'offline-user' })} className="w-full py-2 text-gray-500 hover:text-gray-400 text-xs rounded-lg">Use Offline Mode (backup data only)</button>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    <p className="text-gray-400 text-sm text-center">Configure Supabase to enable cloud sync and authentication.</p>
                     <button onClick={() => setShowConfig(true)} className="w-full py-3 bg-purple-600 hover:bg-purple-700 rounded-lg">Configure Supabase</button>
-                    <button onClick={() => setUser({ offline: true, id: 'offline-user' })} className="w-full py-3 bg-gray-700 hover:bg-gray-600 rounded-lg">Continue Offline</button>
+                    <div className="border-t border-gray-700 mt-2 pt-3">
+                      <button onClick={() => setUser({ offline: true, id: 'offline-user' })} className="w-full py-2 text-gray-500 hover:text-gray-400 text-xs rounded-lg">Use Offline Mode (backup data only)</button>
+                    </div>
                   </div>
                 )}
-                <button onClick={() => setShowConfig(true)} className="w-full mt-4 py-2 text-gray-500 hover:text-gray-300 text-sm">⚙️ Supabase Settings</button>
               </>
             ) : (
               <div className="space-y-4">
@@ -328,7 +333,7 @@
     }
 
     function MainLayout() {
-      const { user, supabase, mice, slices, experiments, experimentSlices, setMice, setSlices, setExperiments, setExperimentSlices } = useData();
+      const { user, setUser, supabase, mice, slices, experiments, experimentSlices, setMice, setSlices, setExperiments, setExperimentSlices } = useData();
       const [activeTab, setActiveTab] = useState('mice');
       const [showSettings, setShowSettings] = useState(false);
       const [showExport, setShowExport] = useState(false);
@@ -371,7 +376,7 @@
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowExport(true)} className="p-2 hover:bg-gray-700 rounded-lg"><Icon name="Database" className="w-5 h-5" /></button>
                 <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-700 rounded-lg"><Icon name="Settings" className="w-5 h-5" /></button>
-                <button onClick={() => { if (supabase && !user.offline) supabase.auth.signOut(); window.location.reload(); }} className="p-2 hover:bg-gray-700 rounded-lg text-gray-400"><Icon name="LogOut" className="w-5 h-5" /></button>
+                <button onClick={async () => { if (supabase) { await supabase.auth.signOut(); } setUser(null); }} className="p-2 hover:bg-gray-700 rounded-lg text-gray-400"><Icon name="LogOut" className="w-5 h-5" /></button>
               </div>
             </div>
             <nav className="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto">
@@ -636,7 +641,7 @@
       const [notes, setNotes] = useState('');
 
       const mouse = mice.find(m => m.id === slice.mouseId);
-      const availableExps = experiments.filter(exp => !experimentSlices.some(es => es.experimentId === exp.id && es.sliceId === slice.id));
+      const availableExps = experiments;
 
       const createNewExp = async (expData) => {
         const newExp = { id: generateId('E'), ...expData, created_at: new Date().toISOString() };
@@ -820,7 +825,7 @@
       const [selectedSlice, setSelectedSlice] = useState(null);
       const [treatment, setTreatment] = useState('');
 
-      const availableSlices = slices.filter(s => !experimentSlices.some(es => es.experimentId === experiment.id && es.sliceId === s.id));
+      const availableSlices = slices;
 
       const addSlice = async () => {
         if (!selectedSlice) return;

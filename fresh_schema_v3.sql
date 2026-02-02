@@ -1,7 +1,7 @@
 -- =============================================
 -- Lab Slice Manager
--- FRESH SCHEMA - Version 3.0
--- Architecture: Many-to-Many Experiments ↔ Slices
+-- FRESH SCHEMA - Version 3.1
+-- Architecture: Many-to-Many Experiments ↔ Slices (duplicates allowed)
 -- Date: January 2025
 -- =============================================
 --
@@ -122,6 +122,8 @@ CREATE POLICY "Users can delete own experiments" ON experiments
 -- TABLE: experiment_slices (Junction Table)
 -- Links experiments to slices (many-to-many)
 -- Contains per-slice treatment information
+-- NOTE: Same slice can appear multiple times in the same experiment
+--       (each with its own treatment/notes)
 -- =============================================
 CREATE TABLE experiment_slices (
     id TEXT PRIMARY KEY,
@@ -130,8 +132,7 @@ CREATE TABLE experiment_slices (
     "sliceId" TEXT REFERENCES slices(id) ON DELETE CASCADE,
     treatment TEXT,
     notes TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE("experimentId", "sliceId")
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Enable RLS
@@ -189,11 +190,11 @@ CREATE POLICY "Authenticated users can view db_version" ON db_version
 
 -- Record version
 INSERT INTO db_version (version, notes) 
-VALUES ('3.0', 'Fresh schema with many-to-many experiments-slices architecture');
+VALUES ('3.1', 'Fresh schema with many-to-many experiments-slices, duplicate slices allowed per experiment');
 
 -- =============================================
 -- SCHEMA COMPLETE!
 -- 
 -- Verify by running: SELECT * FROM db_version;
--- You should see version 3.0 listed.
+-- You should see version 3.1 listed.
 -- =============================================
